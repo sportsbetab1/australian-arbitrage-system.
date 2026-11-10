@@ -1,0 +1,19 @@
+# Secrets and environment settings
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local databases and backups
+*.db
+*.sqlite
+*.sqlite3
+
+# Local development files
+.DS_Store
+.vscode/

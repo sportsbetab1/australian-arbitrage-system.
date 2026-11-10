@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10263d"><link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<title>Arbitrage Control</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#15283b;background:#f2f5f8}
+*{box-sizing:border-box}body{margin:0;padding:env(safe-area-inset-top) 14px env(safe-area-inset-bottom)}
+header{background:#10263d;color:white;margin:0 -14px 16px;padding:22px 18px;border-radius:0 0 18px 18px}
+h1{font-size:22px;margin:0 0 5px}.muted{color:#68798a;font-size:13px}.white{color:#dce8f3}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.card{background:white;border-radius:14px;padding:14px;box-shadow:0 2px 9px #10263d0d;margin-bottom:12px}
+.metric{font-size:25px;font-weight:750;margin-top:5px}.label{font-size:12px;color:#68798a}
+button{border:0;border-radius:10px;background:#1769aa;color:white;padding:12px 14px;font-weight:650;font-size:14px}
+button.secondary{background:#e5eef6;color:#17324d}button:disabled{opacity:.45}
+input,select{width:100%;padding:11px;border:1px solid #ccd6df;border-radius:9px;margin:5px 0 10px;font-size:15px;background:white}
+label{font-size:12px;color:#526578;font-weight:650}.section{font-weight:750;margin:17px 0 9px}
+.row{display:flex;justify-content:space-between;gap:10px;align-items:center}.pill{background:#e4f3e7;color:#24653a;padding:5px 8px;border-radius:20px;font-size:11px}
+.item{border-top:1px solid #edf0f3;padding:11px 0;font-size:13px}.warn{background:#fff5dd;padding:11px;border-radius:10px;font-size:12px;color:#775a12}
+small{font-size:11px;color:#728294}.hidden{display:none}
+</style></head>
+<body>
+<header><div class="row"><div><h1>Arbitrage Control</h1><div class="white">Cloud scanner • iPhone dashboard</div></div><span class="pill">MANUAL BETTING</span></div></header>
+<div class="grid">
+ <div class="card"><div class="label">Starting bankroll</div><div class="metric" id="bankroll">$10,000</div></div>
+ <div class="card"><div class="label">Open exposure</div><div class="metric" id="exposure">$0</div></div>
+ <div class="card"><div class="label">Active sets</div><div class="metric" id="active">0 / 5</div></div>
+ <div class="card"><div class="label">Available capacity</div><div class="metric" id="capacity">$2,500</div></div>
+</div>
+<div class="card">
+ <div class="row"><b>Scanner status</b><span class="pill" id="status">Connecting</span></div>
+ <p class="muted">Minimum net theoretical ROI: 1.5% • $500 combined stake per set. This starter build receives candidate odds through its API; it is not yet connected to a live odds provider.</p>
+ <button class="secondary" onclick="enablePush()">Enable iPhone push notifications</button>
+</div>
+<div class="section">Test an opportunity</div>
+<div class="card">
+ <label>Sport</label><select id="sport"><option>Soccer</option><option>Tennis</option><option>Basketball / NBA</option><option>NRL</option><option>AFL</option><option>Cricket</option></select>
+ <label>Event</label><input id="event" value="Demo match — replace with live event">
+ <label>Market</label><input id="market" value="Match winner — verify rules">
+ <div id="legs"></div>
+ <button class="secondary" onclick="addLeg()">Add outcome</button>
+ <button style="width:100%;margin-top:8px" onclick="scan()">Calculate opportunity</button>
+ <div id="result"></div>
+</div>
+<div class="section">Open sets</div><div class="card" id="sets">Loading…</div>
+<div class="section">Recent opportunities</div><div class="card" id="opps">Loading…</div>
+<div class="warn">Important: the scanner is a decision-support tool, not a guarantee. Verify identical markets, all outcomes, current odds, account limits and settlement rules. A recorded set does not place bets.</div>
+<script>
+let legCount=2, lastOpportunity=null;
+function addLeg(){if(legCount>=3)return;legCount++;renderLegs()}
+function renderLegs(){
+ const el=document.getElementById('legs');el.innerHTML='';
+ for(let i=1;i<=legCount;i++){
+  const d=document.createElement('div');d.innerHTML=`<div class="section">Outcome ${i}</div><label>Selection</label><input id="sel${i}" value="${i===1?'Home':i===2?'Away':'Draw'}"><label>Bookmaker</label><input id="book${i}" value="${i===1?'Bookmaker A':i===2?'Bookmaker B':'Bookmaker C'}"><label>Decimal odds</label><input id="odds${i}" type="number" min="1.01" step="0.01" value="${i===1?'2.10':i===2?'2.05':'3.50'}"><label>Commission % (if applicable)</label><input id="comm${i}" type="number" min="0" max="99" step="0.1" value="0">`;el.appendChild(d)
+ }
+}
+async function api(path,opts={}){let r=await fetch('/api'+path,{headers:{'Content-Type':'application/json'},...opts});let j=await r.json();if(!r.ok)throw Error(j.detail||'Request failed');return j}
+async function refresh(){
+ try{
+  const c=await api('/config'),s=await api('/sets'),o=await api('/opportunities');
+  document.getElementById('status').textContent='API online';
+  document.getElementById('bankroll').textContent='$'+c.bankroll.toLocaleString();
+  document.getElementById('exposure').textContent='$'+s.open_exposure.toLocaleString();
+  document.getElementById('active').textContent=s.open_sets+' / '+c.max_open_sets;
+  document.getElementById('capacity').textContent='$'+s.remaining_exposure.toLocaleString();
+  document.getElementById('sets').innerHTML=s.items.filter(x=>x.status==='Open').map(x=>`<div class="item"><b>${x.sport}: ${x.event}</b><div class="muted">${x.market} • $${x.total_stake} • ${(x.roi*100).toFixed(2)}% theoretical</div><button class="secondary" onclick="settle('${x.id}')">Record settlement</button></div>`).join('')||'<small>No open sets.</small>';
+  document.getElementById('opps').innerHTML=o.map(x=>`<div class="item"><b>${x.sport}: ${x.event}</b><div class="muted">${x.market} • ${(x.roi*100).toFixed(2)}% • ${x.status}</div></div>`).join('')||'<small>No opportunities yet.</small>';
+ }catch(e){document.getElementById('status').textContent='API unavailable'}
+}
+async function scan(){
+ try{
+  const outcomes=[];for(let i=1;i<=legCount;i++)outcomes.push({selection:document.getElementById('sel'+i).value,bookmaker:document.getElementById('book'+i).value,odds:Number(document.getElementById('odds'+i).value),commission_pct:Number(document.getElementById('comm'+i).value)});
+  const x=await api('/scan',{method:'POST',body:JSON.stringify({sport:document.getElementById('sport').value,event:document.getElementById('event').value,market:document.getElementById('market').value,outcomes,total_stake:500})});
+  lastOpportunity=x;
+  let html=`<div class="item"><b>${x.qualified?'Potential arbitrage':'Does not qualify'}</b><div>Net theoretical ROI: ${(x.roi*100).toFixed(2)}%</div><div>Estimated theoretical profit: $${x.profit.toFixed(2)}</div>`;
+  x.stakes.forEach((v,i)=>html+=`<div>${outcomes[i].selection} at ${outcomes[i].bookmaker}: <b>$${v.toFixed(2)}</b></div>`);
+  if(x.qualified)html+=`<button style="margin-top:10px" onclick="openSet('${x.opportunity_id}')">I have manually verified and placed both legs — record $500 set</button>`;
+  html+='</div>';document.getElementById('result').innerHTML=html;refresh();
+ }catch(e){document.getElementById('result').textContent=e.message}
+}
+async function openSet(id){
+ if(!confirm('Confirm: have you independently verified and successfully placed BOTH legs? This only records exposure; it does not place bets.'))return;
+ try{await api('/sets/open',{method:'POST',body:JSON.stringify({opportunity_id:id,manual_confirmation:true,notes:'User confirmed both legs placed manually.'})});refresh()}catch(e){alert(e.message)}
+}
+async function settle(id){
+ const pnl=prompt('Enter actual net profit/loss in AUD (e.g. 8.50 or -500):');if(pnl===null)return;
+ try{await api('/sets/'+id+'/settle',{method:'POST',body:JSON.stringify({actual_pnl:Number(pnl),notes:'Settled manually'})});refresh()}catch(e){alert(e.message)}
+}
+async function enablePush(){
+ try{
+  if(!('serviceWorker' in navigator)||!('PushManager' in window))throw Error('Push is not supported in this browser. On iPhone, install this site to Home Screen and open it there (iOS 16.4+).');
+  const key=await api('/push/public-key');if(!key.public_key)throw Error('Cloud VAPID keys are not configured yet.');
+  const reg=await navigator.serviceWorker.register('/static/sw.js');
+  const permission=await Notification.requestPermission();if(permission!=='granted')throw Error('Notification permission not granted.');
+  const b=Uint8Array.from(atob(key.public_key.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b});
+  await api('/push/subscribe',{method:'POST',body:JSON.stringify({subscription:sub})});alert('Push notifications enabled.');
+ }catch(e){alert(e.message)}
+}
+renderLegs();refresh();setInterval(refresh,15000);
+</script></body></html>
