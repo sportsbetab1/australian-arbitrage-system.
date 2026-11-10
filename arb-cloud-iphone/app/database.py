@@ -153,12 +153,15 @@ def migrate_position_schema():
             "market_type": "TEXT",
             "possible_outcomes_json": "TEXT",
             "market_rules_verified": "INTEGER NOT NULL DEFAULT 0",
+            "actual_pnl": "REAL",
         },
         "position_legs": {
             "event_id": "TEXT",
             "market_id": "TEXT",
             "outcome_id": "TEXT",
             "commission_pct": "REAL NOT NULL DEFAULT 0",
+            "commission_paid": "REAL NOT NULL DEFAULT 0",
+            "commission_paid": "REAL NOT NULL DEFAULT 0",
         },
     }
 

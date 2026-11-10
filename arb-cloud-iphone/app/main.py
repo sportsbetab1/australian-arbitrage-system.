@@ -5,14 +5,14 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 from datetime import datetime, timezone, timedelta
-from typing import List
+from typing import List, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app.database import get_db, init_db
+from app.database import get_db, init_db, migrate_position_schema
 
 # ============================================================
 # SYSTEM SETTINGS
@@ -61,16 +61,15 @@ def db():
 # ============================================================
 # DATABASE INITIALISATION
 # ============================================================
-
 def initialise_system():
     init_db()
+    migrate_position_schema()
 
     with db() as con:
         con.executescript("""
         CREATE TABLE IF NOT EXISTS system_config (
             setting TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
+            value TEXT NOT NULL        );
 
         CREATE TABLE IF NOT EXISTS account_transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,7 +147,10 @@ class Candidate(BaseModel):
 
 class PositionLeg(BaseModel):
     account_id: int
-    selection: str
+    event_id: str = Field(min_length=1)
+    market_id: str = Field(min_length=1)
+    outcome_id: str = Field(min_length=1)
+    selection: str = Field(min_length=1)
     odds: float = Field(gt=1.0)
     stake: float = Field(gt=0)
     commission_pct: float = Field(default=0, ge=0, lt=100)
@@ -159,6 +161,11 @@ class OpenPosition(BaseModel):
     sport: str
     event: str
     market: str
+    event_id: str = Field(min_length=1)
+    market_id: str = Field(min_length=1)
+    market_type: Literal["binary"] = "binary"
+    possible_outcomes: List[str] = Field(min_length=2, max_length=2)
+    market_rules_verified: bool
     legs: List[PositionLeg] = Field(min_length=2, max_length=2)
     manual_confirmation: bool
     notes: str = ""
@@ -226,24 +233,48 @@ def calculate(candidate: Candidate):
     }
 
 
-def calculate_position_roi(legs):
+def calculate_position_roi(legs, possible_outcomes, commission_by_account)::
     total_stake = sum(leg.stake for leg in legs)
 
-    payouts = [
-        leg.stake * net_decimal_odds(
-            leg.odds, leg.commission_pct
-        )
-        for leg in legs
-    ]
+    if total_stake <= 0:
+        raise ValueError("Total stake must be positive.")
 
-    minimum_payout = min(payouts)
-    expected_profit = minimum_payout - total_stake
+    scenario_results = []
+
+    for outcome_id in possible_outcomes:
+        total_return = 0.0
+
+        for leg in legs:
+            if leg.outcome_id == outcome_id:
+                total_return += (
+                    leg.stake
+                    * net_decimal_odds(
+                        leg.odds,
+                        leg.commission_pct,
+                    )
+                )
+
+        profit = total_return - total_stake
+        roi = profit / total_stake
+
+        scenario_results.append({
+            "outcome_id": outcome_id,
+            "total_return": round(total_return, 2),
+            "profit": round(profit, 2),
+            "roi": roi,
+        })
+
+    worst_case = min(
+        scenario_results,
+        key=lambda result: result["profit"],
+    )
 
     return {
         "total_stake": round(total_stake, 2),
-        "minimum_payout": round(minimum_payout, 2),
-        "expected_profit": round(expected_profit, 2),
-        "roi": expected_profit / total_stake,
+        "minimum_payout": worst_case["total_return"],
+        "expected_profit": worst_case["profit"],
+        "roi": worst_case["roi"],
+        "scenarios": scenario_results,
     }
 
 
@@ -551,28 +582,42 @@ def opportunities():
 @app.post("/api/positions/open")
 def open_position(req: OpenPosition):
     if not req.manual_confirmation:
-        raise HTTPException(
-            400,
-            "Manual confirmation of both bookmaker bets is required.",
-        )
+        raise HTTPException(400, "Manual confirmation of both bets is required.")
 
     if not all(leg.manually_accepted for leg in req.legs):
-        raise HTTPException(
-            400,
-            "Both bookmaker legs must be manually confirmed as accepted.",
-        )
+        raise HTTPException(400, "Both bookmaker legs must be manually accepted.")
+
+    if not req.market_rules_verified:
+        raise HTTPException(400, "Market rules must be manually verified.")
+
+    if len(set(req.possible_outcomes)) != 2:
+        raise HTTPException(400, "Exactly two distinct outcomes are required.")
+
+    if any(not outcome.strip() for outcome in req.possible_outcomes):
+        raise HTTPException(400, "Outcome IDs cannot be blank.")
+
+    leg_outcomes = [leg.outcome_id for leg in req.legs]
+
+    if len(set(leg_outcomes)) != 2:
+        raise HTTPException(400, "Each leg must cover a different outcome.")
+
+    if set(leg_outcomes) != set(req.possible_outcomes):
+        raise HTTPException(400, "Both possible outcomes must be covered.")
+
+    for leg in req.legs:
+        if leg.event_id != req.event_id:
+            raise HTTPException(400, "Leg event IDs do not match.")
+        if leg.market_id != req.market_id:
+            raise HTTPException(400, "Leg market IDs do not match.")
 
     with db() as con:
+        con.execute("BEGIN IMMEDIATE")
         account_ids = [leg.account_id for leg in req.legs]
 
         if len(set(account_ids)) != 2:
-            raise HTTPException(
-                400,
-                "The two legs must use two different accounts.",
-            )
+            raise HTTPException(400, "Two different accounts are required.")
 
         placeholders = ",".join("?" for _ in account_ids)
-
         account_rows = con.execute(
             f"""
             SELECT id, owner, bookmaker, status
@@ -589,59 +634,72 @@ def open_position(req: OpenPosition):
 
         if owners != {"Hunta", "Jay"}:
             raise HTTPException(
-                400,
-                "Each position must have one Hunta account "
-                "and one Jay account.",
+                400, "Each position requires one Hunta account and one Jay account."
             )
 
         if any(row["status"] != "active" for row in account_rows):
-            raise HTTPException(
-                409,
-                "Both bookmaker accounts must be active.",
-            )
+            raise HTTPException(409, "Both bookmaker accounts must be active.")
+        betfair_account_ids = [
+            row["id"] for row in account_rows
+            if row["bookmaker"] == "Betfair"
+        ]
 
-        result = calculate_position_roi(req.legs)
+        for betfair_account_id in betfair_account_ids:
+            existing_bet = con.execute("""
+                SELECT id
+                FROM position_legs
+                WHERE account_id = ?
+                  AND settled = 0
+                LIMIT 1
+            """, (betfair_account_id,)).fetchone()
+
+            if existing_bet:
+                owner = next(
+                    row["owner"] for row in account_rows
+                    if row["id"] == betfair_account_id
+                )
+                raise HTTPException(
+                    409,
+                    f"{owner}'s Betfair account already has an unsettled bet. "
+                    "Settle that Betfair leg before opening another position."
+                )
+        result = calculate_position_roi(req.legs, req.possible_outcomes)
 
         if result["roi"] < MIN_NET_ROI:
             raise HTTPException(
                 400,
-                f"Position is below the 1.5% minimum ROI. "
-                f"Calculated ROI: {result['roi']:.2%}.",
+                f"Worst-case ROI is below 1.5%. Calculated: {result['roi']:.2%}.",
             )
 
-        check_new_position_allowed(
-            con, result["total_stake"]
-        )
+        check_new_position_allowed(con, result["total_stake"])
 
         position_id = con.execute("""
             INSERT INTO positions (
                 event, sport, market, status, total_stake,
-                expected_profit, expected_roi, manual_confirmed, notes
+                expected_profit, expected_roi, manual_confirmed, notes,
+                event_id, market_id, market_type,
+                possible_outcomes_json, market_rules_verified
             )
-            VALUES (?, ?, ?, 'Open', ?, ?, ?, 1, ?)
+            VALUES (?, ?, ?, 'Open', ?, ?, ?, 1, ?, ?, ?, ?, ?, 1)
         """, (
-            req.event,
-            req.sport,
-            req.market,
-            result["total_stake"],
-            result["expected_profit"],
-            result["roi"],
-            req.notes,
+            req.event, req.sport, req.market,
+            result["total_stake"], result["expected_profit"],
+            result["roi"], req.notes, req.event_id, req.market_id,
+            req.market_type, json.dumps(req.possible_outcomes),
         )).lastrowid
 
         for leg in req.legs:
             con.execute("""
                 INSERT INTO position_legs (
                     position_id, account_id, selection,
-                    odds, stake, accepted, settled
+                    odds, stake, accepted, settled,
+                    event_id, market_id, outcome_id, commission_pct
                 )
-                VALUES (?, ?, ?, ?, ?, 1, 0)
+                VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?)
             """, (
-                position_id,
-                leg.account_id,
-                leg.selection,
-                leg.odds,
-                leg.stake,
+                position_id, leg.account_id, leg.selection,
+                leg.odds, leg.stake, leg.event_id, leg.market_id,
+                leg.outcome_id, leg.commission_pct,
             ))
 
         con.execute("""
@@ -652,8 +710,12 @@ def open_position(req: OpenPosition):
             json.dumps({
                 "position_id": position_id,
                 "event": req.event,
+                "event_id": req.event_id,
+                "market_id": req.market_id,
+                "possible_outcomes": req.possible_outcomes,
                 "total_stake": result["total_stake"],
                 "roi": result["roi"],
+                "scenarios": result["scenarios"],
                 "owners": sorted(owners),
             }),
         ))
