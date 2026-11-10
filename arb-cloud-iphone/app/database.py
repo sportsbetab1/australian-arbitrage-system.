@@ -143,3 +143,46 @@ def init_db():
 if __name__ == "__main__":
     init_db()
     print("Database initialised.")
+def migrate_position_schema():
+    conn = get_db()
+
+    migrations = {
+        "positions": {
+            "event_id": "TEXT",
+            "market_id": "TEXT",
+            "market_type": "TEXT",
+            "possible_outcomes_json": "TEXT",
+            "market_rules_verified": "INTEGER NOT NULL DEFAULT 0",
+        },
+        "position_legs": {
+            "event_id": "TEXT",
+            "market_id": "TEXT",
+            "outcome_id": "TEXT",
+            "commission_pct": "REAL NOT NULL DEFAULT 0",
+        },
+    }
+
+    try:
+        for table, columns in migrations.items():
+            existing = {
+                row["name"]
+                for row in conn.execute(
+                    f"PRAGMA table_info({table})"
+                ).fetchall()
+            }
+
+            for column, definition in columns.items():
+                if column not in existing:
+                    conn.execute(
+                        f"ALTER TABLE {table} "
+                        f"ADD COLUMN {column} {definition}"
+                    )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
