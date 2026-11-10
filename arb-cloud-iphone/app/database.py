@@ -18,6 +18,23 @@ def init_db():
     conn = get_db()
 
     conn.executescript("""
+
+    CREATE TABLE IF NOT EXISTS opportunities (
+        id TEXT PRIMARY KEY, created_at TEXT, sport TEXT, event TEXT, market TEXT,
+        outcomes_json TEXT, sum_inverse REAL, roi REAL, stake_json TEXT, status TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS sets (
+        id TEXT PRIMARY KEY, opportunity_id TEXT, created_at TEXT, sport TEXT,
+        event TEXT, market TEXT, total_stake REAL, roi REAL, expected_profit REAL,
+        status TEXT, actual_pnl REAL, notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subscription_json TEXT UNIQUE
+    );
+
     CREATE TABLE IF NOT EXISTS accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         owner TEXT NOT NULL CHECK(owner IN ('Hunta', 'Jay')),

@@ -6,38 +6,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-
-DB_PATH = os.getenv("DB_PATH", "/var/data/arbitrage.db")
-os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
-
-BANKROLL = 10000.0
-STAKE_PER_SET = 500.0
-MAX_OPEN_SETS = 5
-MAX_OPEN_EXPOSURE = 2500.0
-MIN_NET_ROI = 0.015
-
-def now():
-    return datetime.now(timezone.utc).isoformat()
+from app.database import get_db, init_db
 
 def db():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
-
-def init_db():
-    with db() as con:
-        con.execute("""CREATE TABLE IF NOT EXISTS opportunities (
-            id TEXT PRIMARY KEY, created_at TEXT, sport TEXT, event TEXT, market TEXT,
-            outcomes_json TEXT, sum_inverse REAL, roi REAL, stake_json TEXT, status TEXT
-        )""")
-        con.execute("""CREATE TABLE IF NOT EXISTS sets (
-            id TEXT PRIMARY KEY, opportunity_id TEXT, created_at TEXT, sport TEXT,
-            event TEXT, market TEXT, total_stake REAL, roi REAL, expected_profit REAL,
-            status TEXT, actual_pnl REAL, notes TEXT
-        )""")
-        con.execute("""CREATE TABLE IF NOT EXISTS push_subscriptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, subscription_json TEXT UNIQUE
-        )""")
+    return get_db()
 
 app = FastAPI(title="Arbitrage Control API", version="0.1.0")
 app.mount("/static", StaticFiles(directory="static"), name="static")
