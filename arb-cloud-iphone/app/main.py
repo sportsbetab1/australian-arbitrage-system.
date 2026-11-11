@@ -255,6 +255,17 @@ class OpenPosition(BaseModel):
     notes: str = ""
 
 
+class RecordHedge(BaseModel):
+    account_id: int
+    outcome_id: str = Field(min_length=1)
+    selection: str = Field(min_length=1)
+    odds: float = Field(gt=1.0)
+    stake: float = Field(gt=0)
+    manual_confirmation: bool
+    manually_accepted: bool
+    notes: str = Field(default="", max_length=500)
+
+
 class SettleLeg(BaseModel):
     actual_return: float = Field(ge=0)
     notes: str = ""
@@ -1297,6 +1308,189 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
     }
 
 
+
+
+@app.post("/api/positions/{position_id}/hedge")
+def record_position_hedge(position_id: int, req: RecordHedge, request: Request):
+    if not req.manual_confirmation or not req.manually_accepted:
+        raise HTTPException(
+            400,
+            "Confirm that the hedge was manually placed and accepted before recording it.",
+        )
+
+    with db() as con:
+        con.execute("BEGIN IMMEDIATE")
+        position = con.execute(
+            "SELECT * FROM positions WHERE id = ?",
+            (position_id,),
+        ).fetchone()
+        if not position:
+            raise HTTPException(404, "Position not found.")
+        if position["status"] != "Unmatched":
+            raise HTTPException(409, "Only an unmatched position can accept a hedge.")
+
+        accepted = con.execute(
+            """
+            SELECT l.account_id, l.selection, l.odds, l.stake, l.outcome_id,
+                   a.bookmaker
+            FROM position_legs l
+            JOIN accounts a ON a.id = l.account_id
+            WHERE l.position_id = ? AND l.accepted = 1
+            """,
+            (position_id,),
+        ).fetchall()
+        if len(accepted) != 1:
+            raise HTTPException(409, "This position already has a recorded hedge.")
+
+        outcomes = json.loads(position["possible_outcomes_json"] or "[]")
+        if len(outcomes) != 2 or req.outcome_id not in outcomes:
+            raise HTTPException(400, "The hedge must cover one of the recorded outcomes.")
+
+        account = con.execute(
+            "SELECT id, bookmaker, status FROM accounts WHERE id = ?",
+            (req.account_id,),
+        ).fetchone()
+        if not account:
+            raise HTTPException(404, "Bookmaker account not found.")
+        if account["status"] != "active":
+            raise HTTPException(409, "The bookmaker account is not active.")
+
+        current_balance = get_account_balance(con, req.account_id)
+        if current_balance is None or current_balance < req.stake:
+            raise HTTPException(409, "Insufficient recorded balance for the hedge account.")
+
+        if account["bookmaker"] == "Betfair":
+            existing_bet = con.execute(
+                """
+                SELECT id FROM position_legs
+                WHERE account_id = ? AND settled = 0
+                LIMIT 1
+                """,
+                (req.account_id,),
+            ).fetchone()
+            if existing_bet:
+                raise HTTPException(
+                    409,
+                    "This Betfair account already has an unsettled bet.",
+                )
+
+        commission_by_account = {}
+        for leg in accepted:
+            commission_by_account[leg["account_id"]] = (
+                6.0 if leg["bookmaker"] == "Betfair" else 0.0
+            )
+        commission_by_account[req.account_id] = (
+            6.0 if account["bookmaker"] == "Betfair" else 0.0
+        )
+
+        def worst_case_profit(legs):
+            total_stake = sum(float(leg["stake"]) for leg in legs)
+            scenario_profits = []
+            for outcome in outcomes:
+                total_return = sum(
+                    float(leg["stake"]) * net_decimal_odds(
+                        float(leg["odds"]),
+                        commission_by_account[leg["account_id"]],
+                    )
+                    for leg in legs
+                    if leg["outcome_id"] == outcome
+                )
+                scenario_profits.append(total_return - total_stake)
+            return min(scenario_profits), total_stake
+
+        baseline_profit, _ = worst_case_profit(accepted)
+        hedge = {
+            "account_id": req.account_id,
+            "selection": req.selection.strip(),
+            "odds": req.odds,
+            "stake": req.stake,
+            "outcome_id": req.outcome_id,
+        }
+        improved_profit, accepted_stake_total = worst_case_profit([*accepted, hedge])
+        if improved_profit <= baseline_profit + 0.005:
+            raise HTTPException(
+                400,
+                "This hedge does not improve the calculated worst-case return. "
+                "Review the outcome, odds, and stake.",
+            )
+
+        current_exposure = get_open_exposure(con)
+        if current_exposure + req.stake > MAX_EXPOSURE:
+            raise HTTPException(
+                409,
+                f"Exposure limit exceeded. Current: ${current_exposure:.2f}; "
+                f"hedge: ${req.stake:.2f}; limit: ${MAX_EXPOSURE:.2f}.",
+            )
+
+        leg_id = con.execute(
+            """
+            INSERT INTO position_legs (
+                position_id, account_id, selection, odds, stake, accepted, settled,
+                event_id, market_id, outcome_id, commission_pct
+            ) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?)
+            """,
+            (
+                position_id, req.account_id, req.selection.strip(), req.odds,
+                req.stake, position["event_id"], position["market_id"],
+                req.outcome_id, commission_by_account[req.account_id],
+            ),
+        ).lastrowid
+        con.execute(
+            """
+            INSERT INTO account_transactions (
+                account_id, transaction_type, amount, description, reference_id
+            ) VALUES (?, 'stake_debit', ?, ?, ?)
+            """,
+            (
+                req.account_id, -req.stake,
+                f"Position {position_id} manually accepted hedge",
+                leg_id,
+            ),
+        )
+        con.execute(
+            """
+            UPDATE positions
+            SET total_stake = total_stake + ?,
+                expected_profit = ?,
+                expected_roi = ?
+            WHERE id = ?
+            """,
+            (
+                req.stake, round(improved_profit, 2),
+                improved_profit / accepted_stake_total, position_id,
+            ),
+        )
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            (
+                "position_hedge_recorded",
+                json.dumps({
+                    "position_id": position_id,
+                    "leg_id": leg_id,
+                    "account_id": req.account_id,
+                    "outcome_id": req.outcome_id,
+                    "stake": req.stake,
+                    "odds": req.odds,
+                    "baseline_worst_case_profit": round(baseline_profit, 2),
+                    "hedged_worst_case_profit": round(improved_profit, 2),
+                    "recorded_by": request.state.auth_user["username"],
+                    "notes": req.notes,
+                }),
+            ),
+        )
+
+    return {
+        "ok": True,
+        "position_id": position_id,
+        "leg_id": leg_id,
+        "position_status": "Unmatched",
+        "worst_case_profit_before": round(baseline_profit, 2),
+        "worst_case_profit_after": round(improved_profit, 2),
+        "message": (
+            "Manually accepted hedge recorded. New positions remain paused "
+            "until every accepted leg in this position is settled."
+        ),
+    }
 
 def create_user_notifications(con, event_type, position_id, title, message):
     users = con.execute(
