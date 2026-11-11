@@ -226,6 +226,35 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client, monkeypatch
     assert balances[("Hunta", "Sportsbet")] == 610
     assert balances[("Jay", "Betfair")] == 603.4
 
+    below_floor_payload = {
+        **payload,
+        "event": "Accepted prices below candidate floor",
+        "event_id": "below-floor-event",
+        "market_id": "below-floor-market",
+        "legs": [
+            {
+                **payload["legs"][0],
+                "event_id": "below-floor-event",
+                "market_id": "below-floor-market",
+                "odds": 1.5,
+            },
+            {
+                **payload["legs"][1],
+                "event_id": "below-floor-event",
+                "market_id": "below-floor-market",
+                "odds": 1.5,
+            },
+        ],
+    }
+    recorded_below_floor = client.post(
+        "/api/positions/open",
+        headers={"Origin": "http://testserver"},
+        json=below_floor_payload,
+    )
+    assert recorded_below_floor.status_code == 200, recorded_below_floor.text
+    assert recorded_below_floor.json()["roi"] < main.MIN_NET_ROI
+    assert "below the 1.5% candidate threshold" in recorded_below_floor.json()["warning"]
+
 
 def test_unmatched_leg_is_reserved_pauses_new_positions_and_can_settle(client):
     assert login(client).status_code == 200
