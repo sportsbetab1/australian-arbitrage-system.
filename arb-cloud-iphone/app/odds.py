@@ -65,6 +65,7 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
     now = now or datetime.now(timezone.utc)
     candidates = []
     for event in events:
+        best = {}
         for bookmaker in event.get("bookmakers", []):
             for market in bookmaker.get("markets", []):
                 if market.get("key") != "h2h":
@@ -96,25 +97,17 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
                         "effective_odds": effective_price,
                         "updated_at": updated.isoformat(),
                     }
-                    # Group by event, h2h market and provider outcome name.
-                    slot = (event.get("id"), "h2h", name)
-                    prior = best.get(slot)
+                    prior = best.get(name)
                     if prior is None or effective_price > prior["effective_odds"]:
-                        best[slot] = item
+                        best[name] = item
 
-        # The best prices are grouped after all bookmakers are visited below.
-    event_ids = {event.get("id") for event in events}
-    for event_id in event_ids:
-        event = next((item for item in events if item.get("id") == event_id), None)
-        if not event:
-            continue
-        outcomes = [value for (eid, market_key, _), value in best.items() if eid == event_id and market_key == "h2h"]
+        outcomes = list(best.values())
         if len(outcomes) < 2 or len(outcomes) > 3:
             continue
         candidates.append({
             "sport": event.get("sport_title") or event.get("sport_key") or "Unknown sport",
             "event": (str(event.get("home_team", "")) + " vs " + str(event.get("away_team", ""))).strip(),
-            "event_id": str(event_id or ""),
+            "event_id": str(event.get("id", "")),
             "market": "h2h",
             "commence_time": event.get("commence_time"),
             "outcomes": [
