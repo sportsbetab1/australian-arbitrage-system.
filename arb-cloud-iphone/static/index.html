@@ -237,7 +237,7 @@ async function startDashboard(){
 async function refresh(){
  try{
   const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities')]);
-  const c=results[0],d=results[1],p=results[2],o=results[3];
+  const d=results[1],p=results[2],o=results[3];
   document.getElementById('status').textContent='API online';
   document.getElementById('bankroll').textContent='$'+Number(d.starting_bankroll).toLocaleString();
   document.getElementById('exposure').textContent='$'+Number(d.open_exposure).toLocaleString();
@@ -245,8 +245,11 @@ async function refresh(){
   document.getElementById('capacity').textContent='$'+Number(d.remaining_exposure).toLocaleString();
   const openPositions=p.filter(function(x){return x.status==='Open'||x.status==='Unmatched'});
   document.getElementById('sets').innerHTML=openPositions.map(function(x){
-   const legs=(x.legs||[]).map(function(l){return '<div class="item">'+escapeHtml(l.owner)+' • '+escapeHtml(l.selection)+' at '+escapeHtml(l.bookmaker)+' • 
-   return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • $'+Number(x.total_stake).toFixed(2)+' • '+(Number(x.expected_roi)*100).toFixed(2)+'% theoretical</div>'+legs+'</div>'
+   const legs=(x.legs||[]).map(function(l){
+    const settleButton=l.accepted&&!l.settled?' <button class="secondary" onclick="settle('+Number(x.id)+','+Number(l.id)+')">Record leg settlement</button>':'';
+    return '<div class="item">'+escapeHtml(l.owner)+' • '+escapeHtml(l.selection)+' at '+escapeHtml(l.bookmaker)+' • $'+Number(l.stake).toFixed(2)+' stake • '+(l.accepted?'accepted':'not accepted')+settleButton+'</div>';
+   }).join('');
+   return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.status)+' • '+escapeHtml(x.market)+' • $'+Number(x.total_stake).toFixed(2)+' • '+(Number(x.expected_roi)*100).toFixed(2)+'% theoretical</div>'+legs+'</div>';
   }).join('')||'<small>No open positions.</small>';
   document.getElementById('opps').innerHTML=o.map(function(x){return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • '+(Number(x.roi)*100).toFixed(2)+'% • '+escapeHtml(x.status)+'</div></div>'}).join('')||'<small>No opportunities yet.</small>';
  }catch(e){document.getElementById('status').textContent=e.message==='Please sign in to use the arbitrage dashboard.'?'Sign in required':'API unavailable'}
@@ -380,134 +383,6 @@ async function recordUnmatchedPosition(){
   message.textContent='Unmatched exposure recorded. '+result.message;
   lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
   setTimeout(closeVetting,3000)
- }catch(e){message.textContent=e.message;button.disabled=false}
-}
-async function settle(positionId,legId){
- const actual=prompt('Enter the total return received from the bookmaker in AUD for this leg (include returned stake; enter 0 if lost):');if(actual===null)return;
- try{await api('/positions/'+positionId+'/legs/'+legId+'/settle',{method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:'Settled manually'})});refresh()}catch(e){alert(e.message)}
-}
-async function enablePush(){
- try{
-  if(!('serviceWorker' in navigator)||!('PushManager' in window))throw Error('Push is not supported in this browser. On iPhone, install this site to Home Screen and open it there (iOS 16.4+).');
-  const key=await api('/push/public-key');if(!key.public_key)throw Error('Cloud VAPID keys are not configured yet.');
-  const reg=await navigator.serviceWorker.register('/static/sw.js');
-  const permission=await Notification.requestPermission();if(permission!=='granted')throw Error('Notification permission not granted.');
-  const b=Uint8Array.from(atob(key.public_key.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
-  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b});
-  await api('/push/subscribe',{method:'POST',body:JSON.stringify({subscription:sub})});alert('Push notifications enabled.');
- }catch(e){alert(e.message)}
-}
-initialize();
-</script></body></html>
-+Number(l.stake).toFixed(2)+' stake • '+(l.accepted?'accepted':'not accepted')+(l.accepted&&!l.settled?' <button class="secondary" onclick="settle('+Number(x.id)+','+Number(l.id)+')">Record leg settlement</button>':'')+'</div>'}).join('');
-   return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • $'+Number(x.total_stake).toFixed(2)+' • '+(Number(x.expected_roi)*100).toFixed(2)+'% theoretical</div>'+legs+'</div>'
-  }).join('')||'<small>No open positions.</small>';
-  document.getElementById('opps').innerHTML=o.map(function(x){return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • '+(Number(x.roi)*100).toFixed(2)+'% • '+escapeHtml(x.status)+'</div></div>'}).join('')||'<small>No opportunities yet.</small>';
- }catch(e){document.getElementById('status').textContent=e.message==='Please sign in to use the arbitrage dashboard.'?'Sign in required':'API unavailable'}
-}
-async function scan(){
- try{
-  const outcomes=[];for(let i=1;i<=legCount;i++)outcomes.push({selection:document.getElementById('sel'+i).value.trim(),bookmaker:document.getElementById('book'+i).value.trim(),odds:Number(document.getElementById('odds'+i).value),commission_pct:Number(document.getElementById('comm'+i).value)});
-  const candidate={sport:document.getElementById('sport').value,event:document.getElementById('event').value.trim(),market:document.getElementById('market').value.trim(),outcomes:outcomes,total_stake:500};
-  const x=await api('/scan',{method:'POST',body:JSON.stringify(candidate)});
-  lastOpportunity=x;lastCandidate=x.candidate||candidate;
-  let html='<div class="item"><b>'+(x.qualified?'Potential arbitrage':'Does not qualify')+'</b><div>Net theoretical ROI: '+(Number(x.roi)*100).toFixed(2)+'%</div><div>Estimated theoretical profit: $'+Number(x.profit).toFixed(2)+'</div>';
-  x.stakes.forEach(function(v,i){html+='<div>'+escapeHtml(outcomes[i].selection)+' at '+escapeHtml(outcomes[i].bookmaker)+': <b>$'+Number(v).toFixed(2)+'</b></div>'});
-  if(x.qualified)html+='<button style="margin-top:10px" onclick="openVetting()">Open assisted vetting</button>';
-  html+='</div>';document.getElementById('result').innerHTML=html;
-  updateVettingAvailability();await refresh();
- }catch(e){document.getElementById('result').textContent=e.message}
-}
-function updateVettingAvailability(){
- const ready=!!(lastOpportunity&&lastOpportunity.qualified&&lastCandidate);
- const button=document.getElementById('openVettingButton');button.disabled=!ready;
- document.getElementById('vettingDock').classList.toggle('hidden',!ready);
- document.getElementById('vettingStatus').textContent=ready?'Qualified candidate ready • '+lastCandidate.event:'Run a qualifying scan to open the review checklist.'
-}
-function selectedAccountsFromUI(){
- return Array.from(lastCandidate.outcomes||[]).map(function(_,i){
-  const id=Number(document.getElementById('accountForLeg'+i).value);
-  return accountsCache.find(function(a){return Number(a.id)===id})
- })
-}
-function updateVettingContinue(){
- const checks=Array.from(document.querySelectorAll('.vetting-check')).every(function(c){return c.checked});
- let valid=false;
- if(lastCandidate&&lastCandidate.outcomes.length===2){
-  const selected=selectedAccountsFromUI();
-  valid=selected.length===2&&selected.every(Boolean)&&selected[0].id!==selected[1].id&&new Set(selected.map(function(a){return a.owner})).size===2
- }
- document.getElementById('beginPlacementButton').disabled=!(checks&&valid)
-}
-async function openVetting(){
- if(!lastOpportunity||!lastOpportunity.qualified||!lastCandidate)return;
- const dialog=document.getElementById('vettingDialog');
- document.getElementById('manualPlacementStage').classList.add('hidden');
- document.getElementById('vettingReviewStage').classList.remove('hidden');
- document.getElementById('vettingMessage').classList.add('hidden');
- document.getElementById('beginPlacementButton').disabled=true;
- document.querySelectorAll('.vetting-check').forEach(function(c){c.checked=false});
- document.getElementById('allPlaced').checked=false;
- document.getElementById('vettingCandidateSummary').innerHTML='<b>'+escapeHtml(lastCandidate.sport)+': '+escapeHtml(lastCandidate.event)+'</b><div>'+escapeHtml(lastCandidate.market)+' • '+(Number(lastOpportunity.roi)*100).toFixed(2)+'% theoretical net ROI • $'+Number(lastOpportunity.profit).toFixed(2)+' estimated theoretical profit</div>';
- const unsupported=document.getElementById('vettingUnsupported'), accountsEl=document.getElementById('vettingLegAccounts');
- accountsEl.innerHTML='';unsupported.classList.add('hidden');
- if(lastCandidate.outcomes.length!==2){
-  unsupported.textContent='Position tracking currently supports two-outcome markets only. The opportunity can be reviewed, but it cannot be recorded as an open position yet.';
-  unsupported.classList.remove('hidden')
- }
- try{accountsCache=await api('/accounts')}catch(e){accountsCache=[];unsupported.textContent=e.message;unsupported.classList.remove('hidden')}
- lastCandidate.outcomes.forEach(function(o,i){
-  const options=accountsCache.filter(function(a){return a.status==='active'});
-  const match=options.find(function(a){return a.bookmaker.toLowerCase()===o.bookmaker.toLowerCase()});
-  const htmlOptions=options.map(function(a){return '<option value="'+Number(a.id)+'" '+(match&&Number(match.id)===Number(a.id)?'selected':'')+'>'+escapeHtml(a.owner)+' — '+escapeHtml(a.bookmaker)+'</option>'}).join('');
-  accountsEl.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+' at '+escapeHtml(o.bookmaker)+'</b><div class="muted">Suggested stake: $'+Number(lastOpportunity.stakes[i]).toFixed(2)+' at '+Number(o.odds).toFixed(2)+' odds</div><label for="accountForLeg'+i+'">Bookmaker account</label><select id="accountForLeg'+i+'">'+htmlOptions+'</select></div>'
- });
- document.querySelectorAll('.vetting-check').forEach(function(c){c.onchange=updateVettingContinue});
- accountsEl.querySelectorAll('select').forEach(function(s){s.onchange=updateVettingContinue});
- if(dialog.showModal)dialog.showModal();else dialog.setAttribute('open','');
- updateVettingContinue()
-}
-function closeVetting(){const d=document.getElementById('vettingDialog');if(d.close)d.close();else d.removeAttribute('open')}
-function beginManualPlacement(){
- updateVettingContinue();if(document.getElementById('beginPlacementButton').disabled)return;
- selectedLegAccounts=selectedAccountsFromUI();
- const target=document.getElementById('manualLegChecks');target.innerHTML='';
- lastCandidate.outcomes.forEach(function(o,i){
-  target.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+'</b><div>'+escapeHtml(o.bookmaker)+' • '+Number(o.odds).toFixed(2)+' odds • stake $'+Number(lastOpportunity.stakes[i]).toFixed(2)+'</div><label class="check-row"><input type="checkbox" class="leg-accepted">This leg was placed manually and the bookmaker accepted it.</label></div>'
- });
- document.getElementById('vettingReviewStage').classList.add('hidden');
- document.getElementById('manualPlacementStage').classList.remove('hidden');
- document.getElementById('recordPositionButton').disabled=true;
- document.getElementById('allPlaced').onchange=updateRecordPosition;
- document.querySelectorAll('.leg-accepted').forEach(function(c){c.onchange=updateRecordPosition})
-}
-function updateRecordPosition(){
- const checks=Array.from(document.querySelectorAll('.leg-accepted'));
- const acceptedCount=checks.filter(function(c){return c.checked}).length;
- document.getElementById('recordPositionButton').disabled=!(acceptedCount===2&&document.getElementById('allPlaced').checked);
- document.getElementById('recordUnmatchedButton').disabled=acceptedCount!==1
-}
-async function recordPosition(){
- updateRecordPosition();if(document.getElementById('recordPositionButton').disabled)return;
- const eventId=slug(lastCandidate.event),marketId=slug(lastCandidate.market);
- const outcomes=lastCandidate.outcomes.map(function(o){return slug(o.selection)});
- if(new Set(outcomes).size!==2){document.getElementById('vettingMessage').textContent='The two selections need distinct names before they can be recorded.';document.getElementById('vettingMessage').classList.remove('hidden');return}
- const request={
-  sport:lastCandidate.sport,event:lastCandidate.event,market:lastCandidate.market,
-  event_id:eventId,market_id:marketId,market_type:'binary',
-  possible_outcomes:outcomes,market_rules_verified:true,manual_confirmation:true,
-  notes:'Assisted vetting completed and both legs manually confirmed by '+(currentUser?currentUser.display_name:'signed-in user')+'.',
-  legs:lastCandidate.outcomes.map(function(o,i){
-   return {account_id:Number(selectedLegAccounts[i].id),event_id:eventId,market_id:marketId,outcome_id:outcomes[i],selection:o.selection,odds:Number(o.odds),stake:Number(lastOpportunity.stakes[i]),commission_pct:Number(o.commission_pct||0),manually_accepted:true}
-  })
- };
- const button=document.getElementById('recordPositionButton'),message=document.getElementById('vettingMessage');
- button.disabled=true;message.textContent='Recording the manually placed position…';message.classList.remove('hidden');
- try{
-  const result=await api('/positions/open',{method:'POST',body:JSON.stringify(request)});
-  message.textContent='Position recorded. '+result.message;
-  lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
-  setTimeout(closeVetting,1400)
  }catch(e){message.textContent=e.message;button.disabled=false}
 }
 async function settle(positionId,legId){
