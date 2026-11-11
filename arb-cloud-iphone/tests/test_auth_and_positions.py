@@ -774,6 +774,22 @@ def test_push_subscription_requires_safe_https_endpoint(client):
         )
         assert response.status_code == 400
 
+    for endpoint in (
+        "https://web.push.apple.com/test",
+        "https://updates.push.services.mozilla.com/test",
+    ):
+        response = client.post(
+            "/api/push/subscribe",
+            headers=headers,
+            json={
+                "subscription": {
+                    "endpoint": endpoint,
+                    "keys": {"p256dh": "test-key", "auth": "test-auth"},
+                }
+            },
+        )
+        assert response.status_code == 200, response.text
+
 
 def test_reports_include_losses_and_csv_escapes_formula_cells(client):
     assert login(client).status_code == 200
