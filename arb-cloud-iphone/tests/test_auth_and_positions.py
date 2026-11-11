@@ -154,6 +154,19 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client):
     assert result["status"] == "Open"
     assert result["confirmed_by"] == "hunta"
     assert "No bookmaker bets were placed" in result["message"]
+    hunta_notifications = client.get("/api/notifications").json()
+    assert hunta_notifications["unread_count"] == 1
+    opened_alert = hunta_notifications["items"][0]
+    assert opened_alert["event_type"] == "position_opened"
+    assert opened_alert["position_id"] == result["position_id"]
+    marked = client.post(
+        f"/api/notifications/{opened_alert['id']}/read",
+        headers={"Origin": "http://testserver"},
+        json={},
+    )
+    assert marked.status_code == 200
+    assert client.get("/api/notifications").json()["unread_count"] == 0
+
     balances = {
         (row["owner"], row["bookmaker"]): row["balance"]
         for row in client.get("/api/accounts").json()
@@ -173,6 +186,26 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client):
         json={"actual_return": 210, "notes": "Test settlement"},
     )
     assert settled_second.status_code == 200
+    hunta_notifications = client.get("/api/notifications").json()
+    settled_alerts = [
+        item for item in hunta_notifications["items"]
+        if item["event_type"] == "position_settled"
+    ]
+    assert len(settled_alerts) == 1
+    assert "Test settlement" not in settled_alerts[0]["message"]
+
+    jay_login = login(client, username="jay", password="Jay-test-passphrase-2026")
+    assert jay_login.status_code == 200
+    jay_notifications = client.get("/api/notifications").json()
+    assert {item["event_type"] for item in jay_notifications["items"]} == {
+        "position_opened", "position_settled"
+    }
+    assert client.post(
+        f"/api/notifications/{opened_alert['id']}/read",
+        headers={"Origin": "http://testserver"},
+        json={},
+    ).status_code == 404
+
     balances = {
         (row["owner"], row["bookmaker"]): row["balance"]
         for row in client.get("/api/accounts").json()
