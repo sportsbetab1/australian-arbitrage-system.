@@ -33,7 +33,7 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 - Bookmaker balances are entered and tracked manually. Opening balances, deposits, withdrawals, accepted stakes, and settlement returns are journaled; they are not synced with bookmakers and need reconciliation against statements.
 - Position tracking is binary only. The candidate calculator may calculate other outcome counts, but the assisted position workflow does not support them.
 - Betfair commission is hard-coded by bookmaker name and approximated; verify the actual commission and market rules manually.
-- Email and push helper code exists, but delivery is not yet connected to position/settlement events. Push subscriptions are not yet separated by user.
+- In-app notifications are stored per user for position opened/unmatched and settled events, and each user has independent read state. Push/email delivery is not yet connected to these events; existing push subscriptions are not yet separated by user.
 - Settlement summary and CSV export are available in the authenticated dashboard.
 - Backup and restore scripts create integrity-checked SQLite snapshots and keep a pre-restore safety copy. They are manual and on the same storage volume by default; off-site storage, automated scheduling, and restore drills remain outstanding.
 - Password recovery, monitoring, and production readiness work remain outstanding.
@@ -76,7 +76,7 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 
 1. Finish unmatched-bet recovery: add a way to record an offsetting hedge or cashout, and test repricing / rejected-leg scenarios. Current protection records one accepted leg, reserves exposure, pauses new positions, and tracks its settlement.
 2. Verify The Odds API coverage, event/market matching, provider freshness, and bookmaker-specific rules in a controlled review before relying on feed candidates.
-3. Add per-user push subscriptions and a persistent notification outbox; connect notifications to position/settlement events.
+3. Harden per-user push subscriptions and add a delivery outbox/retry path before connecting push/email alerts to the in-app events.
 4. Reconcile manually entered bookmaker balances against statements and add adjustment/audit controls.
 5. Schedule backups to an off-site destination and run a documented restore drill.
 6. Expand security tests for session expiry, logout, lockout, origin checks, authorization boundaries, and recovery.
