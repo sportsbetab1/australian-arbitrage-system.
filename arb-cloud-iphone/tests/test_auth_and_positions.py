@@ -748,3 +748,31 @@ def test_account_reconciliation_records_signed_audited_adjustment(client):
     assert len(entry) == 1
     assert entry[0]["amount"] == -17.5
     assert audit_count == 1
+
+
+def test_authenticated_user_can_create_and_list_integrity_checked_backup(client, monkeypatch, tmp_path):
+    assert login(client).status_code == 200
+    backup_dir = tmp_path / "manual-backups"
+    monkeypatch.setenv("BACKUP_DIR", str(backup_dir))
+    headers = {"Origin": "http://testserver"}
+
+    created = client.post("/api/backups/create", headers=headers, json={})
+    assert created.status_code == 200, created.text
+    result = created.json()
+    backup_file = backup_dir / result["name"]
+    assert backup_file.is_file()
+    assert result["size_bytes"] > 0
+
+    listed = client.get("/api/backups")
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["name"] == result["name"]
+
+    con = database.get_db()
+    try:
+        audit = con.execute(
+            "SELECT details FROM audit_log WHERE action = 'database_backup_created'"
+        ).fetchone()
+        assert audit is not None
+        assert "hunta" in audit["details"]
+    finally:
+        con.close()
