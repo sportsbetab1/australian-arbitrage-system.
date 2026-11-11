@@ -508,7 +508,7 @@ async function recordPosition(){
  button.disabled=true;message.textContent='Recording the manually placed position…';message.classList.remove('hidden');
  try{
   const result=await api('/positions/open',{method:'POST',body:JSON.stringify(request)});
-  message.textContent='Position recorded. '+result.message;
+  message.textContent='Position recorded. '+result.message+(result.warning?' Warning: '+result.warning:'');
   lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
   setTimeout(closeVetting,1400)
  }catch(e){message.textContent=e.message;button.disabled=false}
@@ -536,7 +536,7 @@ async function recordUnmatchedPosition(){
  button.disabled=true;message.textContent='Recording unmatched exposure and pausing new positions…';message.classList.remove('hidden');
  try{
   const result=await api('/positions/unmatched',{method:'POST',body:JSON.stringify(request)});
-  message.textContent='Unmatched exposure recorded. '+result.message;
+  message.textContent='Unmatched exposure recorded. '+result.message+(result.warning?' Warning: '+result.warning:'');
   lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
   setTimeout(closeVetting,3000)
  }catch(e){message.textContent=e.message;button.disabled=false}
