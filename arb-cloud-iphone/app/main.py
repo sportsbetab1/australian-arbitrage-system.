@@ -1,5 +1,6 @@
 import os
 import json
+from pathlib import Path
 import uuid
 import csv
 import io
@@ -22,7 +23,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
+from scripts.backup_db import create_backup
 from app.odds import OddsProviderError, build_h2h_candidates, fetch_json
 
 # ============================================================
@@ -943,6 +946,70 @@ def reconcile_account_balance(
             if abs(delta) < 0.005 else
             "Reconciliation adjustment recorded in the account ledger."
         ),
+    }
+
+
+def backup_directory():
+    configured = os.getenv("BACKUP_DIR")
+    if configured:
+        return Path(configured).resolve()
+    return Path(database_module.DB_PATH).resolve().parent / "backups"
+
+
+@app.get("/api/backups")
+def list_backups():
+    directory = backup_directory()
+    backups = sorted(
+        directory.glob("arbitrage-*.sqlite") if directory.exists() else [],
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
+    return {
+        "items": [
+            {
+                "name": item.name,
+                "size_bytes": item.stat().st_size,
+                "created_at": datetime.fromtimestamp(
+                    item.stat().st_mtime, timezone.utc
+                ).isoformat(),
+            }
+            for item in backups[:30]
+        ]
+    }
+
+
+@app.post("/api/backups/create")
+def create_manual_backup(request: Request):
+    try:
+        keep = int(os.getenv("BACKUP_KEEP", "14"))
+    except ValueError:
+        raise HTTPException(500, "BACKUP_KEEP must be a positive integer.") from None
+    try:
+        target = create_backup(
+            database_module.DB_PATH,
+            backup_directory(),
+            keep=keep,
+        )
+    except (OSError, ValueError, sqlite3.DatabaseError) as error:
+        raise HTTPException(500, f"Backup failed: {error}") from None
+
+    with db() as con:
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            (
+                "database_backup_created",
+                json.dumps({
+                    "filename": target.name,
+                    "size_bytes": target.stat().st_size,
+                    "created_by": request.state.auth_user["username"],
+                }),
+            ),
+        )
+    return {
+        "ok": True,
+        "name": target.name,
+        "size_bytes": target.stat().st_size,
+        "message": "Integrity-checked backup created.",
     }
 
 
