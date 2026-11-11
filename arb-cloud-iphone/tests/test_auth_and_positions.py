@@ -307,6 +307,31 @@ def test_unmatched_leg_is_reserved_pauses_new_positions_and_can_settle(client):
     assert settled.json()["actual_pnl"] == 110
     assert client.get("/api/dashboard").json()["open_positions"] == 0
 
+    duplicate = client.post(
+        "/api/positions/{}/legs/{}/settle".format(
+            position["id"], accepted_leg["id"]
+        ),
+        headers=headers,
+        json={"actual_return": 210, "notes": "Duplicate submission"},
+    )
+    assert duplicate.status_code == 409
+
+    con = database.get_db()
+    try:
+        settlement_audits = con.execute(
+            "SELECT details FROM audit_log WHERE action = 'position_leg_settled'"
+        ).fetchall()
+        settlement_returns = con.execute(
+            "SELECT COUNT(*) AS total FROM account_transactions "
+            "WHERE transaction_type = 'settlement_return' AND reference_id = ?",
+            (accepted_leg["id"],),
+        ).fetchone()["total"]
+    finally:
+        con.close()
+    assert len(settlement_audits) == 1
+    assert settlement_returns == 1
+    assert '"recorded_by": "hunta"' in settlement_audits[0]["details"]
+
 def test_account_transactions_reject_withdrawals_beyond_recorded_balance(client):
     assert login(client).status_code == 200
     con = database.get_db()
