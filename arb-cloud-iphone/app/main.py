@@ -1347,8 +1347,8 @@ def record_position_hedge(position_id: int, req: RecordHedge, request: Request):
             """,
             (position_id,),
         ).fetchall()
-        if len(accepted) != 1:
-            raise HTTPException(409, "This position already has a recorded hedge.")
+        if not accepted:
+            raise HTTPException(409, "Record an accepted leg before adding a hedge.")
 
         outcomes = json.loads(position["possible_outcomes_json"] or "[]")
         if len(outcomes) != 2 or req.outcome_id not in outcomes:
