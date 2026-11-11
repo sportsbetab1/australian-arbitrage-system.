@@ -22,9 +22,9 @@ These values describe the backend constants. They are planning controls, not bal
 
 The dashboard supports Hunta and Jay accounts with Argon2 password hashes, HTTP-only sessions, a one-time first-run setup token, a 12-hour session lifetime, and a 15-minute lock after five failed sign-in attempts. Set a long random `AUTH_SETUP_TOKEN` in the hosting environment before first startup. The token is only for initial setup; password recovery is currently an administrator task.
 
-A qualified candidate exposes the **Open assisted vetting** button. The checklist asks the signed-in person to check the market, rules, outcomes, current odds, commission, limits, and selected accounts. One signed-in person may confirm and record both legs; a second person is not required. The user must place both bets manually and verify both were accepted before recording them.
+A qualified candidate exposes the **Open assisted vetting** button. The checklist asks the signed-in person to check the market, rules, outcomes, current odds, commission, limits, and selected accounts. One signed-in person may confirm and record both legs; a second person is not required. The user places both bets manually and records whether each bookmaker accepted the displayed bet.
 
-The app records the user's confirmation and the entered details. It cannot independently verify that a bookmaker accepted a bet. If one leg is accepted and the other is rejected or repriced, the current workflow does not yet provide a dedicated unmatched-bet recovery state. Treat this as a key outstanding safety feature.
+If exactly one leg was accepted, **Record one accepted leg as unmatched** stores the exposure, counts it against the cap, marks the rejected leg as not placed, and pauses new positions until the accepted leg is settled. The app cannot verify bookmaker acceptance. This recovery path tracks settlement of the accepted leg; it does not place an offsetting hedge or track a later hedge as another leg.
 
 ## Current limitations
 
