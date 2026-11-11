@@ -32,5 +32,13 @@ services:
         sync: false
       - key: AUTH_SETUP_TOKEN
         sync: false
+      - key: ODDS_API_KEY
+        sync: false
+      - key: ODDS_API_BASE
+        value: https://api.the-odds-api.com/v4
+      - key: BACKUP_DIR
+        value: /var/data/backups
+      - key: BACKUP_KEEP
+        value: "14"
       - key: AUTH_COOKIE_SECURE
         value: "true"
