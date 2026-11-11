@@ -161,7 +161,8 @@ def init_db():
         "Unibet",
         "Dabble",
         "Picklebet",
-        "Ladbrokes"
+        "Ladbrokes",
+        "TAB"
     ]
 
     for owner in ("Hunta", "Jay"):
