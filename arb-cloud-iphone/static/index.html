@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#10263d"><link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#2A2C5F"><link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <title>Arbitrage Control</title>
 <style>
@@ -44,6 +44,46 @@ dialog::backdrop{background:#0b1b2b99}
 #vettingLegAccounts .item,#manualLegChecks .item{background:#f7fafc;border-radius:10px;padding:12px;margin:9px 0;border:1px solid #e4ebf1}
 .result-message{padding:10px;margin-top:10px;border-radius:8px;background:#eef4f8}
 @media(min-width:720px){.vetting-dock{left:auto;right:24px;width:320px}}
+
+/* Unified palette: dashboard, authentication, and assisted-vetting */
+:root{
+ --app-bg:#F6F7FB;--surface:#FFFFFF;--ink:#2B2024;--muted-ink:#3B4A6B;
+ --navy:#2A2C5F;--indigo:#393C83;--blue:#23B2DA;--aqua:#43D9E7;--mint:#5BE7C4;
+ --lavender:#DAEAF7;--rose:#D59CC5;--magenta:#BE5CA9;--border:#EADADA;
+ --alert:#A80139;--hot-pink:#FD0053;--coral:#F23456;--sky:#4FC0E8;
+ --teal:#3EC4D0;--violet:#7A56D0;--deep-teal:#0C8ABC;--gold:#F1D43A;
+ color-scheme:light;
+}
+body{color:var(--ink);background:var(--app-bg)}
+header{background:linear-gradient(135deg,var(--navy),var(--indigo) 62%,var(--deep-teal));color:var(--surface)}
+header .white{color:var(--lavender)}
+header .pill{background:var(--aqua);color:var(--navy)}
+.card{background:var(--surface);border:1px solid var(--border);box-shadow:0 5px 20px #2A2C5F12}
+.metric{color:var(--navy)}
+.muted,.label,small{color:var(--muted-ink)}
+button{background:linear-gradient(120deg,var(--blue),var(--aqua));color:var(--navy);box-shadow:0 2px 8px #23B2DA2b;transition:filter .15s,transform .15s}
+button:hover:not(:disabled){filter:saturate(1.12) brightness(.98);transform:translateY(-1px)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--magenta);outline-offset:2px}
+button.secondary{background:var(--lavender);color:var(--navy);box-shadow:none}
+input,select{color:var(--ink);background:var(--surface);border-color:#3B4A6B55}
+label{color:var(--muted-ink)}
+.pill{background:var(--mint);color:var(--navy)}
+.item,.check-row{border-color:var(--border)}
+.warn{background:#F1D43A35;border:1px solid #F1D43A;color:#5A4510}
+.auth-gate{background:linear-gradient(145deg,#DAEAF7,#D59CC555 55%,#43D9E733)}
+.auth-panel{border-top:4px solid var(--magenta)}
+.vetting-card{border-color:var(--sky);background:linear-gradient(145deg,var(--surface),#DAEAF744)}
+.vetting-dock{background:linear-gradient(120deg,var(--navy),var(--indigo));box-shadow:0 8px 28px #2A2C5F55}
+.vetting-dock button{background:linear-gradient(120deg,var(--magenta),var(--rose));color:var(--navy)}
+dialog{background:var(--surface);color:var(--ink);border:1px solid var(--rose)}
+dialog::backdrop{background:#2B2024B8}
+#vettingLegAccounts .item,#manualLegChecks .item{background:#DAEAF755;border-color:#4FC0E855}
+.result-message{background:#43D9E733;border:1px solid var(--teal);color:var(--navy)}
+.error,.error-message,.pill.bad{background:#FD00531A;color:var(--alert);border-color:var(--coral)}
+.pill.good{background:#5BE7C4;color:var(--navy)}
+a{color:var(--deep-teal)}
+@media(prefers-reduced-motion:reduce){button{transition:none}button:hover:not(:disabled){transform:none}}
+
 </style></head>
 <body>
 <header><div class="row"><div><h1>Arbitrage Control</h1><div class="white">Cloud scanner • iPhone dashboard</div></div><span class="pill">MANUAL BETTING</span></div><div id="authControls" class="row hidden"><span>Signed in as <b id="userName"></b></span><button class="secondary" type="button" onclick="logout()">Sign out</button></div></header>
