@@ -603,6 +603,12 @@ def test_unmatched_position_accepts_only_risk_improving_manual_hedge(client):
         if index == 0:
             assert settled.json()["position_status"] == "Unmatched"
             assert settled.json()["remaining_legs"] == len(accepted_legs) - 1
+            notifications = client.get("/api/notifications").json()["items"]
+            assert any(
+                item["event_type"] == "position_leg_settled"
+                and item["position_id"] == position_id
+                for item in notifications
+            )
     final = client.get("/api/positions").json()
     settled_position = next(item for item in final if item["id"] == position_id)
     assert settled_position["status"] == "Settled"
