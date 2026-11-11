@@ -1915,7 +1915,7 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg, request: Request):
             return {
                 "ok": True,
                 "leg_settled": True,
-                "position_status": "Open",
+                "position_status": position["status"],
                 "remaining_legs": remaining,
                 "commission_paid": commission_paid,
                 "message": (
