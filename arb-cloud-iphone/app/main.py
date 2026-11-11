@@ -1469,14 +1469,17 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
             con, notification_type, position_id,
             notification_title, notification_message,
         )
+        push_payload = {
+            "title": notification_title,
+            "body": notification_message,
+            "position_id": position_id,
+            "event_type": notification_type,
+        }
+        from app import push_delivery
+        push_delivery.enqueue_with_connection(con, push_payload)
 
     status = "Unmatched" if allow_unmatched else "Open"
-    send_push({
-        "title": notification_title,
-        "body": notification_message,
-        "position_id": position_id,
-        "event_type": notification_type,
-    })
+    send_push(push_payload)
     return {
         "ok": True,
         "position_id": position_id,
@@ -2001,13 +2004,16 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg, request: Request):
             "Position settled",
             f"{position['event']}: net P/L {pnl:.2f}.",
         )
+        push_payload = {
+            "title": "Position settled",
+            "body": f"{position['event']}: net P/L {pnl:.2f}.",
+            "position_id": position_id,
+            "event_type": "position_settled",
+        }
+        from app import push_delivery
+        push_delivery.enqueue_with_connection(con, push_payload)
 
-    send_push({
-        "title": "Position settled",
-        "body": f"{position['event']}: net P/L {pnl:.2f}.",
-        "position_id": position_id,
-        "event_type": "position_settled",
-    })
+    send_push(push_payload)
     return {
         "ok": True,
         "position_status": "Settled",
