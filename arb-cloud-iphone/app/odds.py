@@ -66,10 +66,16 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
     candidates = []
     for event in events:
         best = {}
+        possible_outcomes = set()
         for bookmaker in event.get("bookmakers", []):
             for market in bookmaker.get("markets", []):
                 if market.get("key") != "h2h":
                     continue
+                possible_outcomes.update(
+                    str(item.get("name", "")).strip()
+                    for item in market.get("outcomes", [])
+                    if str(item.get("name", "")).strip()
+                )
                 updated = _market_updated_at(market.get("last_update"))
                 if updated is None:
                     continue
@@ -102,7 +108,11 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
                         best[name] = item
 
         outcomes = list(best.values())
-        if len(outcomes) < 2 or len(outcomes) > 3:
+        if (
+            len(outcomes) < 2
+            or len(outcomes) > 3
+            or set(best) != possible_outcomes
+        ):
             continue
         candidates.append({
             "sport": event.get("sport_title") or event.get("sport_key") or "Unknown sport",
