@@ -87,7 +87,9 @@ def test_expired_login_lockout_resets_failed_attempts(client):
         con.close()
 
 
-def test_one_signed_in_person_can_record_both_confirmed_legs(client):
+def test_one_signed_in_person_can_record_both_confirmed_legs(client, monkeypatch):
+    push_events = []
+    monkeypatch.setattr(main, "send_push", lambda payload, user_id=None: push_events.append(payload) or 1)
     response = login(client)
     assert response.status_code == 200
 
@@ -153,6 +155,7 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client):
     result = opened.json()
     assert result["status"] == "Open"
     assert result["confirmed_by"] == "hunta"
+    assert push_events[0]["event_type"] == "position_opened"
     assert "No bookmaker bets were placed" in result["message"]
     hunta_notifications = client.get("/api/notifications").json()
     assert hunta_notifications["unread_count"] == 1
@@ -186,6 +189,9 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client):
         json={"actual_return": 210, "notes": "Test settlement"},
     )
     assert settled_second.status_code == 200
+    assert [event["event_type"] for event in push_events] == [
+        "position_opened", "position_settled"
+    ]
     hunta_notifications = client.get("/api/notifications").json()
     settled_alerts = [
         item for item in hunta_notifications["items"]
