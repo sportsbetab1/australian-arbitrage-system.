@@ -22,7 +22,7 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
@@ -220,14 +220,18 @@ async def require_authenticated_api(request: Request, call_next):
     return await call_next(request)
 
 
-class Outcome(BaseModel):
+class StrictModel(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+
+class Outcome(StrictModel):
     selection: str
     bookmaker: str
     odds: float = Field(gt=1.0)
     commission_pct: float = Field(default=0, ge=0, lt=100)
 
 
-class Candidate(BaseModel):
+class Candidate(StrictModel):
     sport: str
     event: str
     market: str
@@ -235,7 +239,7 @@ class Candidate(BaseModel):
     total_stake: float = Field(gt=0)
 
 
-class PositionLeg(BaseModel):
+class PositionLeg(StrictModel):
     account_id: int
     event_id: str = Field(min_length=1)
     market_id: str = Field(min_length=1)
@@ -247,7 +251,7 @@ class PositionLeg(BaseModel):
     manually_accepted: bool = False
 
 
-class OpenPosition(BaseModel):
+class OpenPosition(StrictModel):
     sport: str
     event: str
     market: str
@@ -261,7 +265,7 @@ class OpenPosition(BaseModel):
     notes: str = ""
 
 
-class RecordHedge(BaseModel):
+class RecordHedge(StrictModel):
     account_id: int
     outcome_id: str = Field(min_length=1)
     selection: str = Field(min_length=1)
@@ -272,46 +276,46 @@ class RecordHedge(BaseModel):
     notes: str = Field(default="", max_length=500)
 
 
-class SettleLeg(BaseModel):
+class SettleLeg(StrictModel):
     actual_return: float = Field(ge=0)
     notes: str = ""
 
 
-class BufferCommit(BaseModel):
+class BufferCommit(StrictModel):
     position_id: int | None = None
     amount: float = Field(gt=0)
     description: str = ""
 
 
-class BufferResolve(BaseModel):
+class BufferResolve(StrictModel):
     notes: str = ""
 
 
-class OpeningBalance(BaseModel):
+class OpeningBalance(StrictModel):
     amount: float = Field(ge=0)
 
 
-class AccountTransaction(BaseModel):
+class AccountTransaction(StrictModel):
     transaction_type: Literal["deposit", "withdrawal"]
     amount: float = Field(gt=0)
     description: str = Field(min_length=1, max_length=240)
 
 
-class PushSub(BaseModel):
+class PushSub(StrictModel):
     subscription: dict
 
-class AccountReconciliation(BaseModel):
+class AccountReconciliation(StrictModel):
     actual_balance: float = Field(ge=0)
     reason: str = Field(min_length=1, max_length=240)
 
 
-class AuthSetup(BaseModel):
+class AuthSetup(StrictModel):
     setup_token: str = Field(min_length=1)
     hunta_password: str = Field(min_length=12, max_length=256)
     jay_password: str = Field(min_length=12, max_length=256)
 
 
-class AuthLogin(BaseModel):
+class AuthLogin(StrictModel):
     username: Literal["hunta", "jay"]
     password: str = Field(min_length=1, max_length=256)
 
