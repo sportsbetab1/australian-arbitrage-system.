@@ -122,6 +122,15 @@ a{color:var(--deep-teal)}
   <button class="secondary" id="openVettingButton" type="button" disabled onclick="openVetting()">Open assisted vetting</button>
  </div>
 </div>
+<div class="section">Live odds feed</div>
+<div class="card">
+ <p class="muted">Fetch Australian head-to-head odds on demand. A returned opportunity is only a candidate; verify matching rules and current prices manually.</p>
+ <button class="secondary" type="button" onclick="loadOddsSports()">Load available sports</button>
+ <label for="oddsSport">Sport</label><select id="oddsSport"><option value="">Load sports first</option></select>
+ <button type="button" onclick="scanLiveOdds()">Scan Australian odds now</button>
+ <div id="liveOddsStatus" class="muted" role="status" aria-live="polite"></div>
+ <div id="liveOddsResults"></div>
+</div>
 <div class="section">Bookmaker account balances</div>
 <div class="card" id="accountBalances">Loading account balances…</div>
 <div class="section">Test an opportunity</div>
@@ -170,7 +179,7 @@ a{color:var(--deep-teal)}
  </div>
 </dialog>
 <script>
-let legCount=2, lastOpportunity=null, lastCandidate=null, currentUser=null, accountsCache=[], selectedLegAccounts=[], refreshTimer=null;
+let legCount=2, lastOpportunity=null, lastCandidate=null, currentUser=null, accountsCache=[], selectedLegAccounts=[], refreshTimer=null, liveCandidateRows=[];
 function addLeg(){if(legCount>=3)return;legCount++;renderLegs()}
 function renderLegs(){
  const el=document.getElementById('legs');el.innerHTML='';
@@ -298,6 +307,38 @@ async function refresh(){
   }).join('')||'<small>No open positions.</small>';
   document.getElementById('opps').innerHTML=o.map(function(x){return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • '+(Number(x.roi)*100).toFixed(2)+'% • '+escapeHtml(x.status)+'</div></div>'}).join('')||'<small>No opportunities yet.</small>';
  }catch(e){document.getElementById('status').textContent=e.message==='Please sign in to use the arbitrage dashboard.'?'Sign in required':'API unavailable'}
+}
+async function loadOddsSports(){
+ const status=document.getElementById('liveOddsStatus');
+ status.textContent='Loading provider sports…';
+ try{
+  const result=await api('/odds/sports');
+  const active=(result.sports||[]).filter(function(s){return s.active});
+  document.getElementById('oddsSport').innerHTML=active.map(function(s){
+   return '<option value="'+escapeHtml(s.key)+'">'+escapeHtml(s.title||s.key)+'</option>';
+  }).join('')||'<option value="">No active sports</option>';
+  status.textContent='Loaded '+active.length+' active sports. No odds request has been made yet.';
+ }catch(e){status.textContent=e.message}
+}
+async function scanLiveOdds(){
+ const sportKey=document.getElementById('oddsSport').value;
+ if(!sportKey){document.getElementById('liveOddsStatus').textContent='Load and select a sport first.';return}
+ const status=document.getElementById('liveOddsStatus'),resultsEl=document.getElementById('liveOddsResults');
+ status.textContent='Fetching current Australian odds…';resultsEl.textContent='';
+ try{
+  const result=await api('/odds/scan/'+encodeURIComponent(sportKey));
+  liveCandidateRows=result.candidates||[];
+  status.textContent='Checked '+result.events_received+' events; '+result.qualified_count+' qualified candidates. Provider credits remaining: '+(result.quota.requests_remaining??'not reported')+'.';
+  resultsEl.innerHTML=liveCandidateRows.map(function(row,index){
+   return '<div class="item"><b>'+escapeHtml(row.candidate.event)+'</b><div class="muted">'+escapeHtml(row.candidate.market)+' • '+(Number(row.roi)*100).toFixed(2)+'% theoretical ROI • Updated '+escapeHtml(row.source_updated_at)+'</div><button class="secondary" onclick="selectLiveCandidate('+index+')">Review this candidate</button></div>';
+  }).join('')||'<small>No fresh qualifying candidates returned. Try again later.</small>';
+ }catch(e){status.textContent=e.message}
+}
+function selectLiveCandidate(index){
+ const row=liveCandidateRows[index];if(!row)return;
+ lastOpportunity=row;lastCandidate=row.candidate;
+ updateVettingAvailability();
+ document.querySelector('.vetting-card').scrollIntoView({behavior:'smooth',block:'center'});
 }
 async function scan(){
  try{
