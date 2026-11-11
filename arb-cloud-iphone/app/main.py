@@ -2027,7 +2027,10 @@ def send_push(payload, user_id=None):
 def subscribe(req: PushSub, request: Request):
     endpoint = req.subscription.get("endpoint")
     keys = req.subscription.get("keys")
-    parsed = urlsplit(endpoint) if isinstance(endpoint, str) else None
+    try:
+        parsed = urlsplit(endpoint) if isinstance(endpoint, str) else None
+    except ValueError:
+        parsed = None
     if (
         parsed is None
         or parsed.scheme.lower() != "https"
