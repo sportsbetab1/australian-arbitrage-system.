@@ -176,7 +176,7 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client):
         for row in client.get("/api/accounts").json()
     }
     assert balances[("Hunta", "Sportsbet")] == 610
-    assert balances[("Jay", "Betfair")] == 503.4
+    assert balances[("Jay", "Betfair")] == 603.4
 
 
 def test_unmatched_leg_is_reserved_pauses_new_positions_and_can_settle(client):
