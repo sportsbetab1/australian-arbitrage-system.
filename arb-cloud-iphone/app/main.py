@@ -20,6 +20,7 @@ from typing import List, Literal
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -158,6 +159,18 @@ app.mount(
     StaticFiles(directory="static"),
     name="static",
 )
+
+@app.exception_handler(RequestValidationError)
+async def sanitized_validation_error(request: Request, error: RequestValidationError):
+    details = [
+        {
+            "loc": item.get("loc", ()),
+            "msg": item.get("msg", "Invalid input."),
+            "type": item.get("type", "value_error"),
+        }
+        for item in error.errors()
+    ]
+    return JSONResponse({"detail": details}, status_code=422)
 
 AUTH_COOKIE_NAME = "arb_session"
 AUTH_SESSION_HOURS = 12
