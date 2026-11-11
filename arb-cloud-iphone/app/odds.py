@@ -65,6 +65,9 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
     now = now or datetime.now(timezone.utc)
     candidates = []
     for event in events:
+        commence = _market_updated_at(event.get("commence_time"))
+        if commence is None or commence <= now:
+            continue
         best = {}
         possible_outcomes = set()
         for bookmaker in event.get("bookmakers", []):
