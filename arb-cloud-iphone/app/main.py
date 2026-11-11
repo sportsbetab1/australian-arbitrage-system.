@@ -1374,12 +1374,6 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
             commission_by_account,
         )
 
-        if result["roi"] < MIN_NET_ROI:
-            raise HTTPException(
-                400,
-                f"Worst-case ROI is below 1.5%. Calculated: {result['roi']:.2%}.",
-            )
-
         check_new_position_allowed(con, result["total_stake"])
 
         position_id = con.execute("""
@@ -1468,6 +1462,11 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
         "status": status,
         "confirmed_by": request.state.auth_user["username"],
         **result,
+        "warning": (
+            f"Entered accepted prices produce a worst-case ROI of {result['roi']:.2%}, "
+            "below the 1.5% candidate threshold. Verify the recorded legs."
+            if result["roi"] < MIN_NET_ROI else None
+        ),
         "message": (
             "One accepted leg recorded as unmatched. New positions are paused "
             "until this position is settled."
