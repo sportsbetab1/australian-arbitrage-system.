@@ -233,7 +233,7 @@ def calculate(candidate: Candidate):
     }
 
 
-def calculate_position_roi(legs, possible_outcomes, commission_by_account)::
+def calculate_position_roi(legs, possible_outcomes, commission_by_account):
     total_stake = sum(leg.stake for leg in legs)
 
     if total_stake <= 0:
@@ -250,7 +250,7 @@ def calculate_position_roi(legs, possible_outcomes, commission_by_account)::
                     leg.stake
                     * net_decimal_odds(
                         leg.odds,
-                        leg.commission_pct,
+                        commission_by_account[leg.account_id],
                     )
                 )
 
@@ -639,6 +639,11 @@ def open_position(req: OpenPosition):
 
         if any(row["status"] != "active" for row in account_rows):
             raise HTTPException(409, "Both bookmaker accounts must be active.")
+
+        commission_by_account = {
+            row["id"]: 6.0 if row["bookmaker"] == "Betfair" else 0.0
+            for row in account_rows
+        }
         betfair_account_ids = [
             row["id"] for row in account_rows
             if row["bookmaker"] == "Betfair"
@@ -663,7 +668,11 @@ def open_position(req: OpenPosition):
                     f"{owner}'s Betfair account already has an unsettled bet. "
                     "Settle that Betfair leg before opening another position."
                 )
-        result = calculate_position_roi(req.legs, req.possible_outcomes)
+        result = calculate_position_roi(
+            req.legs,
+            req.possible_outcomes,
+            commission_by_account,
+        )
 
         if result["roi"] < MIN_NET_ROI:
             raise HTTPException(
@@ -699,7 +708,7 @@ def open_position(req: OpenPosition):
             """, (
                 position_id, leg.account_id, leg.selection,
                 leg.odds, leg.stake, leg.event_id, leg.market_id,
-                leg.outcome_id, leg.commission_pct,
+                leg.outcome_id, commission_by_account[leg.account_id],
             ))
 
         con.execute("""
@@ -796,11 +805,18 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
         if leg["settled"]:
             raise HTTPException(409, "This leg is already settled.")
 
+        commission_pct = float(leg["commission_pct"] or 0)
+        gross_profit = max(req.actual_return - leg["stake"], 0)
+        commission_paid = round(
+            gross_profit * commission_pct / 100,
+            2,
+        )
+
         con.execute("""
             UPDATE position_legs
-            SET settled = 1, actual_return = ?
+            SET settled = 1, actual_return = ?, commission_paid = ?
             WHERE id = ?
-        """, (req.actual_return, leg_id))
+        """, (req.actual_return, commission_paid, leg_id))
 
         remaining = con.execute("""
             SELECT COUNT(*) AS total
@@ -814,6 +830,7 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
                 "leg_settled": True,
                 "position_status": "Open",
                 "remaining_legs": remaining,
+                "commission_paid": commission_paid,
                 "message": (
                     "One leg settled. Full position exposure remains "
                     "committed until both legs settle."
@@ -823,14 +840,16 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
         totals = con.execute("""
             SELECT
                 COALESCE(SUM(stake), 0) AS total_stake,
-                COALESCE(SUM(actual_return), 0) AS total_return
+                COALESCE(SUM(actual_return), 0) AS total_return,
+                COALESCE(SUM(commission_paid), 0) AS total_commission
             FROM position_legs
             WHERE position_id = ?
         """, (position_id,)).fetchone()
 
         pnl = round(
             float(totals["total_return"]) -
-            float(totals["total_stake"]),
+            float(totals["total_stake"]) -
+            float(totals["total_commission"]),
             2,
         )
 
@@ -853,6 +872,7 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
             json.dumps({
                 "position_id": position_id,
                 "actual_pnl": pnl,
+                "total_commission": totals["total_commission"],
                 "allocation": allocation,
             }),
         ))
@@ -861,6 +881,7 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
         "ok": True,
         "position_status": "Settled",
         "actual_pnl": pnl,
+        "total_commission": totals["total_commission"],
         **allocation,
         "message": "Both legs settled. Position exposure released.",
     }
