@@ -185,7 +185,7 @@ def delivery_status():
         ).fetchall()
         dead = con.execute(
             """
-            SELECT id, user_id, attempts, last_error, created_at, updated_at
+            SELECT id, attempts, last_error, created_at, updated_at
             FROM push_delivery_queue
             WHERE status = 'dead'
             ORDER BY updated_at DESC, id DESC
