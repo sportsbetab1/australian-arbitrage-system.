@@ -24,7 +24,7 @@ The dashboard supports Hunta and Jay accounts with Argon2 password hashes, HTTP-
 
 A qualified candidate exposes the **Open assisted vetting** button. The checklist asks the signed-in person to check the market, rules, outcomes, current odds, commission, limits, and selected accounts. One signed-in person may confirm and record both legs; a second person is not required. The user places both bets manually and records whether each bookmaker accepted the displayed bet.
 
-If exactly one leg was accepted, **Record one accepted leg as unmatched** stores the exposure, counts it against the cap, marks the rejected leg as not placed, and pauses new positions until the accepted leg is settled. The app cannot verify bookmaker acceptance. This recovery path tracks settlement of the accepted leg; it does not place an offsetting hedge or track a later hedge as another leg.
+If exactly one leg was accepted, **Record one accepted leg as unmatched** stores the exposure, counts it against the cap, marks the rejected leg as not placed, and pauses new positions. A later manually placed hedge can be recorded on that position if it improves the calculated worst-case return; the app checks balance and exposure and allows one hedge record. New positions remain paused until all accepted legs settle. The app cannot verify bookmaker acceptance or place the hedge itself.
 
 ## Current limitations
 
@@ -74,7 +74,7 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 
 ## Recommended next work
 
-1. Finish unmatched-bet recovery: add a way to record an offsetting hedge or cashout, and test repricing / rejected-leg scenarios. Current protection records one accepted leg, reserves exposure, pauses new positions, and tracks its settlement.
+1. Extend unmatched recovery beyond one hedge entry, including cashout/partial fills and stronger scenario tests. The current recovery path records one accepted leg and one manually accepted, risk-improving hedge; it reserves planned exposure and pauses new positions until settlement.
 2. Verify The Odds API coverage, event/market matching, provider freshness, and bookmaker-specific rules in a controlled review before relying on feed candidates.
 3. Harden per-user push subscriptions and add a delivery outbox/retry path before connecting push/email alerts to the in-app events.
 4. Reconcile manually entered bookmaker balances against statements and add adjustment/audit controls.
