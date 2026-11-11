@@ -15,7 +15,7 @@ These values describe the backend constants. They are planning controls, not bal
 - Minimum calculated worst-case net ROI: 1.5%
 - Profit allocation after positive settled P/L: 75% reinvestment and 25% withdrawal
 - Betfair commission: currently assumed to be 6% on winnings, using a simplified model
-- Concurrent positions: limited by the exposure cap; each Betfair account is also limited to one unsettled leg
+- Concurrent positions: limited by the exposure cap; each Betfair account is also limited to one unsettled leg. An older project discussion mentioned a 15-position cap; the current backend does not enforce that separate cap and should be reconciled before release.
 - Position recording: binary/two-outcome markets only
 
 ## Sign-in and assisted vetting
@@ -28,7 +28,7 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 
 ## Current limitations
 
-- No live odds API is integrated. `/api/scan` calculates from submitted candidate odds.
+- The Odds API is integrated as an on-demand Australian (`au`) head-to-head feed. The dashboard can list sports and scan a selected sport; fresh complete outcome sets are scored against the 1.5% theoretical ROI threshold and shown for manual review. The API key is read from `ODDS_API_KEY`; it is not configured by the repository, and provider results are not guaranteed to match your accounts, bookmaker rules, liquidity, or prices at placement. `/api/scan` also supports manually entered odds.
 - No automated bookmaker bet placement or bookmaker-account connection exists.
 - Bookmaker balances are entered and tracked manually. Opening balances, deposits, withdrawals, accepted stakes, and settlement returns are journaled; they are not synced with bookmakers and need reconciliation against statements.
 - Position tracking is binary only. The candidate calculator may calculate other outcome counts, but the assisted position workflow does not support them.
@@ -75,11 +75,12 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 ## Recommended next work
 
 1. Finish unmatched-bet recovery: add a way to record an offsetting hedge or cashout, and test repricing / rejected-leg scenarios. Current protection records one accepted leg, reserves exposure, pauses new positions, and tracks its settlement.
-2. Integrate The Odds API behind a manually triggered scanner, keeping the API key in a secret and showing freshness and quota. Confirm available sports, markets, and terms before relying on a feed.
+2. Verify The Odds API coverage, event/market matching, provider freshness, and bookmaker-specific rules in a controlled review before relying on feed candidates.
 3. Add per-user push subscriptions and a persistent notification outbox; connect notifications to position/settlement events.
 4. Reconcile manually entered bookmaker balances against statements and add adjustment/audit controls.
 5. Schedule backups to an off-site destination and run a documented restore drill.
 6. Expand security tests for session expiry, logout, lockout, origin checks, authorization boundaries, and recovery.
-7. Complete a security and recovery review before any deployment.
+7. Confirm whether the separate 15-position cap and TAB bookmaker from earlier project discussions remain requirements.
+8. Complete a security and recovery review before any deployment.
 
 Horse racing is a later phase and needs separate handling for dead heats, deductions, non-runners, starting-price/fixed-odds differences, and place terms.
