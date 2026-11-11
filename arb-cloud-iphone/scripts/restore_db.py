@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import sqlite3
+import uuid
 
 from scripts.backup_db import create_backup
 
@@ -29,7 +30,7 @@ def restore_backup(backup_path, db_path):
         )
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    temporary = target.with_name(f"{target.name}.{stamp}.restore.tmp")
+    temporary = target.with_name(f"{target.name}.{stamp}.{uuid.uuid4().hex[:8]}.restore.tmp")
     try:
         with sqlite3.connect(source) as src, sqlite3.connect(temporary) as dst:
             src.backup(dst)
