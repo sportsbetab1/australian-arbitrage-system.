@@ -55,7 +55,10 @@ BOOKMAKERS = [
     "Dabble",
     "Picklebet",
     "Ladbrokes",
+    "TAB",
 ]
+
+MAX_OPEN_POSITIONS = 15
 
 MAX_EXPOSURE = round(
     STARTING_BANKROLL * MAX_EXPOSURE_PERCENT, 2
@@ -708,6 +711,15 @@ def check_new_position_allowed(con, additional_exposure):
             "has exceeded its 24-hour deadline.",
         )
 
+    open_positions = con.execute(
+        "SELECT COUNT(*) AS total FROM positions WHERE status IN ('Open', 'Unmatched')"
+    ).fetchone()["total"]
+    if open_positions >= MAX_OPEN_POSITIONS:
+        raise HTTPException(
+            409,
+            f"Open-position limit reached ({MAX_OPEN_POSITIONS}). Settle an existing position before adding another.",
+        )
+
     current = get_open_exposure(con)
     proposed = round(current + additional_exposure, 2)
 
@@ -815,7 +827,7 @@ def config():
         "withdrawal_percent": WITHDRAWAL_PERCENT,
         "bookmakers": BOOKMAKERS,
         "bet_placement": "manual only",
-        "concurrent_position_limit": "unlimited within exposure cap",
+        "concurrent_position_limit": MAX_OPEN_POSITIONS,
     }
 
 
