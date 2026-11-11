@@ -39,6 +39,7 @@ def login(client, username="hunta", password="Hunta-test-passphrase-2026"):
 
 def test_authentication_protects_api_and_login_creates_session(client):
     assert client.get("/api/accounts").status_code == 401
+    assert client.get("/api/push/delivery-status").status_code == 401
 
     response = login(client)
     assert response.status_code == 200
@@ -724,6 +725,11 @@ def test_push_subscriptions_are_user_scoped(client, monkeypatch):
     assert delivered == ["https://fcm.googleapis.com/hunta"]
     assert main.send_push({"title": "test"}, user_id=jay_id) == 1
     assert delivered[-1] == "https://fcm.googleapis.com/jay"
+    queue_status = client.get("/api/push/delivery-status")
+    assert queue_status.status_code == 200
+    assert queue_status.json()["counts"]["sent"] == 2
+    assert queue_status.json()["counts"]["dead"] == 0
+    assert queue_status.json()["dead_letters"] == []
 
 
 def test_push_subscription_requires_safe_https_endpoint(client):
