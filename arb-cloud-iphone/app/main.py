@@ -568,7 +568,7 @@ def get_open_exposure(con):
     row = con.execute("""
         SELECT COALESCE(SUM(total_stake), 0) AS exposure
         FROM positions
-        WHERE status = 'Open'
+        WHERE status IN ('Open', 'Unmatched')
     """).fetchone()
 
     return round(float(row["exposure"]), 2)
@@ -610,6 +610,17 @@ def get_buffer_state(con):
 
 def check_new_position_allowed(con, additional_exposure):
     buffer = get_buffer_state(con)
+
+    unmatched = con.execute("""
+        SELECT COUNT(*) AS total
+        FROM positions
+        WHERE status = 'Unmatched'
+    """).fetchone()["total"]
+    if unmatched:
+        raise HTTPException(
+            409,
+            "New positions paused: resolve the unmatched position before continuing.",
+        )
 
     if buffer["overdue_items"] > 0:
         raise HTTPException(
@@ -750,7 +761,7 @@ def dashboard():
         open_count = con.execute("""
             SELECT COUNT(*) AS total
             FROM positions
-            WHERE status = 'Open'
+            WHERE status IN ('Open', 'Unmatched')
         """).fetchone()["total"]
 
         settled = con.execute("""
@@ -863,11 +874,28 @@ def opportunities():
 
 @app.post("/api/positions/open")
 def open_position(req: OpenPosition, request: Request):
+    return _create_position(req, request, allow_unmatched=False)
+
+
+@app.post("/api/positions/unmatched")
+def record_unmatched_position(req: OpenPosition, request: Request):
+    if sum(1 for leg in req.legs if leg.manually_accepted) != 1:
+        raise HTTPException(
+            400,
+            "An unmatched position must contain exactly one accepted leg.",
+        )
+    return _create_position(req, request, allow_unmatched=True)
+
+
+def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool):
     if not req.manual_confirmation:
         raise HTTPException(400, "Manual confirmation of both bets is required.")
 
-    if not all(leg.manually_accepted for leg in req.legs):
+    accepted_count = sum(1 for leg in req.legs if leg.manually_accepted)
+    if not allow_unmatched and accepted_count != 2:
         raise HTTPException(400, "Both bookmaker legs must be manually accepted.")
+    if allow_unmatched and accepted_count != 1:
+        raise HTTPException(400, "Exactly one bookmaker leg must be manually accepted.")
 
     if not req.market_rules_verified:
         raise HTTPException(400, "Market rules must be manually verified.")
@@ -971,9 +999,10 @@ def open_position(req: OpenPosition, request: Request):
                 event_id, market_id, market_type,
                 possible_outcomes_json, market_rules_verified
             )
-            VALUES (?, ?, ?, 'Open', ?, ?, ?, 1, ?, ?, ?, ?, ?, 1)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 1)
         """, (
             req.event, req.sport, req.market,
+            "Unmatched" if allow_unmatched else "Open",
             result["total_stake"], result["expected_profit"],
             result["roi"], req.notes, req.event_id, req.market_id,
             req.market_type, json.dumps(req.possible_outcomes),
@@ -986,18 +1015,20 @@ def open_position(req: OpenPosition, request: Request):
                     odds, stake, accepted, settled,
                     event_id, market_id, outcome_id, commission_pct
                 )
-                VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 position_id, leg.account_id, leg.selection,
-                leg.odds, leg.stake, leg.event_id, leg.market_id,
-                leg.outcome_id, commission_by_account[leg.account_id],
+                leg.odds, leg.stake, int(leg.manually_accepted),
+                0 if leg.manually_accepted else 1,
+                leg.event_id, leg.market_id, leg.outcome_id,
+                commission_by_account[leg.account_id],
             ))
 
         con.execute("""
             INSERT INTO audit_log(action, details)
             VALUES (?, ?)
         """, (
-            "position_opened",
+            "position_unmatched" if allow_unmatched else "position_opened",
             json.dumps({
                 "position_id": position_id,
                 "event": req.event,
@@ -1009,16 +1040,21 @@ def open_position(req: OpenPosition, request: Request):
                 "scenarios": result["scenarios"],
                 "owners": sorted(owners),
                 "confirmed_by": request.state.auth_user["username"],
+                "accepted_legs": accepted_count,
             }),
         ))
 
+    status = "Unmatched" if allow_unmatched else "Open"
     return {
         "ok": True,
         "position_id": position_id,
-        "status": "Open",
+        "status": status,
         "confirmed_by": request.state.auth_user["username"],
         **result,
         "message": (
+            "One accepted leg recorded as unmatched. New positions are paused "
+            "until this position is settled."
+            if allow_unmatched else
             "Both legs recorded as manually accepted. "
             "No bookmaker bets were placed by this application."
         ),
@@ -1074,8 +1110,8 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
         if not position:
             raise HTTPException(404, "Position not found.")
 
-        if position["status"] != "Open":
-            raise HTTPException(409, "Position is not open.")
+        if position["status"] not in ("Open", "Unmatched"):
+            raise HTTPException(409, "Position is not open or unmatched.")
 
         leg = con.execute("""
             SELECT *
@@ -1088,6 +1124,8 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
 
         if leg["settled"]:
             raise HTTPException(409, "This leg is already settled.")
+        if not leg["accepted"]:
+            raise HTTPException(409, "A leg that was not accepted cannot be settled.")
 
         commission_pct = float(leg["commission_pct"] or 0)
         gross_profit = max(req.actual_return - leg["stake"], 0)
@@ -1123,8 +1161,8 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
 
         totals = con.execute("""
             SELECT
-                COALESCE(SUM(stake), 0) AS total_stake,
-                COALESCE(SUM(actual_return), 0) AS total_return,
+                COALESCE(SUM(CASE WHEN accepted = 1 THEN stake ELSE 0 END), 0) AS total_stake,
+                COALESCE(SUM(CASE WHEN accepted = 1 THEN actual_return ELSE 0 END), 0) AS total_return,
                 COALESCE(SUM(commission_paid), 0) AS total_commission
             FROM position_legs
             WHERE position_id = ?
