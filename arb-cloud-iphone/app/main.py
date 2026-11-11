@@ -2244,6 +2244,13 @@ def subscribe(req: PushSub, request: Request):
         raise HTTPException(400, "A valid HTTPS push subscription is required.")
 
     host = parsed.hostname.lower().rstrip(".")
+    allowed_push_host = (
+        host == "fcm.googleapis.com"
+        or host == "web.push.apple.com"
+        or host.endswith(".push.services.mozilla.com")
+    )
+    if not allowed_push_host:
+        raise HTTPException(400, "The push subscription host is not an approved browser push service.")
     if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
         raise HTTPException(400, "The push subscription host is not allowed.")
     try:
