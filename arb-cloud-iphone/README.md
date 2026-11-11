@@ -83,7 +83,7 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 
 ## Recommended next work
 
-1. Extend unmatched recovery with cashout and partial-fill records. The current recovery path permits repeated manually accepted hedges only when each improves the worst-case result; it reserves planned exposure and pauses new positions until settlement.
+1. Add cashout recording and continue validating unmatched recovery. The assisted form now records actual accepted odds and stakes, including smaller accepted stakes; unmatched recovery still pauses new positions and requires each manually accepted hedge to improve the worst-case result.
 2. Verify The Odds API coverage, event/market matching, provider freshness, and bookmaker-specific rules in a controlled review before relying on feed candidates.
 3. Connect email alerts to the existing event notifications and schedule the push retry command on the host.
 4. Reconcile manually entered bookmaker balances against statements and add adjustment/audit controls.
