@@ -641,8 +641,7 @@ def test_session_cookie_is_http_only_same_site_and_time_limited(client):
 
 
 def test_push_subscriptions_are_user_scoped(client, monkeypatch):
-    import sys
-    import types
+    from app import push_delivery
 
     assert login(client, username="hunta").status_code == 200
     headers = {"Origin": "http://testserver"}
@@ -684,9 +683,11 @@ def test_push_subscriptions_are_user_scoped(client, monkeypatch):
     ).status_code == 200
 
     delivered = []
-    fake_module = types.ModuleType("pywebpush")
-    fake_module.webpush = lambda subscription, payload, **kwargs: delivered.append(subscription["endpoint"])
-    monkeypatch.setitem(sys.modules, "pywebpush", fake_module)
+    monkeypatch.setattr(
+        push_delivery,
+        "webpush",
+        lambda subscription, payload, **kwargs: delivered.append(subscription["endpoint"]),
+    )
     monkeypatch.setenv("VAPID_PUBLIC_KEY", "public-test")
     monkeypatch.setenv("VAPID_PRIVATE_KEY", "private-test")
 
