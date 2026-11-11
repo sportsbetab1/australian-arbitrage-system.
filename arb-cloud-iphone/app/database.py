@@ -175,6 +175,17 @@ def init_db():
                 (owner, bookmaker)
             )
 
+    subscription_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(push_subscriptions)")
+    }
+    if "user_id" not in subscription_columns:
+        conn.execute(
+            "ALTER TABLE push_subscriptions ADD COLUMN user_id INTEGER REFERENCES auth_users(id) ON DELETE CASCADE"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id)"
+    )
+
     conn.commit()
     conn.close()
 
