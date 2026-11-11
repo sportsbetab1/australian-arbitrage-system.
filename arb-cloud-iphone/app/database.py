@@ -136,6 +136,22 @@ def init_db():
 
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry
     ON auth_sessions(expires_at);
+
+    CREATE TABLE IF NOT EXISTS user_notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        position_id INTEGER,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        read_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE,
+        FOREIGN KEY(position_id) REFERENCES positions(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_notifications_unread
+    ON user_notifications(user_id, read_at, created_at);
     """)
 
     bookmakers = [
