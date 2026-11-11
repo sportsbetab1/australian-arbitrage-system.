@@ -29,7 +29,7 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 
 ## Current limitations
 
-- The Odds API is integrated as an on-demand Australian (`au`) head-to-head feed. The dashboard can list sports and scan a selected sport; fresh complete outcome sets are scored against the 1.5% theoretical ROI threshold and shown for manual review. The API key is read from `ODDS_API_KEY`; it is not configured by the repository, and provider results are not guaranteed to match your accounts, bookmaker rules, liquidity, or prices at placement. `/api/scan` also supports manually entered odds.
+- The Odds API is integrated as an on-demand Australian (`au`) head-to-head feed. The dashboard can list sports and scan a selected sport; fresh, complete, upcoming-event outcome sets are scored against the 1.5% theoretical ROI threshold; events with missing or elapsed start times are excluded and shown for manual review. The API key is read from `ODDS_API_KEY`; it is not configured by the repository, and provider results are not guaranteed to match your accounts, bookmaker rules, liquidity, or prices at placement. `/api/scan` also supports manually entered odds.
 - No automated bookmaker bet placement or bookmaker-account connection exists.
 - Bookmaker balances are entered and tracked manually. Opening balances, deposits, withdrawals, accepted stakes, settlement returns, and reasoned balance reconciliations are journaled and audited; balances are not synced with bookmakers and must be checked against statements.
 - Position tracking is binary only. The candidate calculator may calculate other outcome counts, but the assisted position workflow does not support them.
