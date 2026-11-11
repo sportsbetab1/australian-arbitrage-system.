@@ -2260,6 +2260,13 @@ def subscribe(req: PushSub, request: Request):
     return {"ok": True}
 
 
+@app.get("/api/push/delivery-status")
+def push_delivery_status():
+    from app import push_delivery
+
+    return push_delivery.delivery_status()
+
+
 @app.get("/api/push/public-key")
 def push_key():
     return {
