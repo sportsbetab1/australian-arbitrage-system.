@@ -30,3 +30,7 @@ services:
         sync: false
       - key: VAPID_SUBJECT
         sync: false
+      - key: AUTH_SETUP_TOKEN
+        sync: false
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
