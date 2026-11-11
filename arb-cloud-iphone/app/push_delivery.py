@@ -26,47 +26,50 @@ def _now_text():
     return _now().isoformat()
 
 
-def enqueue(payload, user_id=None):
+def enqueue_with_connection(con, payload, user_id=None):
     serialized_payload = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-    with get_db() as con:
-        con.execute("BEGIN IMMEDIATE")
-        if user_id is None:
-            rows = con.execute(
-                "SELECT user_id, subscription_json FROM push_subscriptions "
-                "WHERE user_id IS NOT NULL"
-            ).fetchall()
-        else:
-            rows = con.execute(
-                "SELECT user_id, subscription_json FROM push_subscriptions "
-                "WHERE user_id = ?",
-                (user_id,),
-            ).fetchall()
+    if user_id is None:
+        rows = con.execute(
+            "SELECT user_id, subscription_json FROM push_subscriptions "
+            "WHERE user_id IS NOT NULL"
+        ).fetchall()
+    else:
+        rows = con.execute(
+            "SELECT user_id, subscription_json FROM push_subscriptions "
+            "WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
 
-        created = 0
-        for row in rows:
-            dedupe = hashlib.sha256(
-                (str(row["user_id"]) + "\0" + row["subscription_json"] + "\0" + serialized_payload)
-                .encode("utf-8")
-            ).hexdigest()
-            cursor = con.execute(
-                """
-                INSERT OR IGNORE INTO push_delivery_queue(
-                    user_id, subscription_json, payload_json, dedupe_key,
-                    status, attempts, next_attempt_at, created_at
-                ) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
-                """,
-                (
-                    row["user_id"],
-                    row["subscription_json"],
-                    serialized_payload,
-                    dedupe,
-                    _now_text(),
-                    _now_text(),
-                ),
-            )
-            created += cursor.rowcount
+    created = 0
+    for row in rows:
+        dedupe = hashlib.sha256(
+            (str(row["user_id"]) + "\\0" + row["subscription_json"] + "\\0" + serialized_payload)
+            .encode("utf-8")
+        ).hexdigest()
+        cursor = con.execute(
+            """
+            INSERT OR IGNORE INTO push_delivery_queue(
+                user_id, subscription_json, payload_json, dedupe_key,
+                status, attempts, next_attempt_at, created_at
+            ) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
+            """,
+            (
+                row["user_id"],
+                row["subscription_json"],
+                serialized_payload,
+                dedupe,
+                _now_text(),
+                _now_text(),
+            ),
+        )
+        created += cursor.rowcount
     return created
 
+
+def enqueue(payload, user_id=None):
+    with get_db() as con:
+        con.execute("BEGIN IMMEDIATE")
+        return enqueue_with_connection(con, payload, user_id=user_id)
 
 def _safe_error(error):
     response = getattr(error, "response", None)
