@@ -3,12 +3,17 @@ import json
 import uuid
 import smtplib
 import ssl
+import hashlib
+import hmac
+import secrets
 from email.message import EmailMessage
 from datetime import datetime, timezone, timedelta
 from typing import List, Literal
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -129,6 +134,42 @@ app.mount(
     name="static",
 )
 
+AUTH_COOKIE_NAME = "arb_session"
+AUTH_SESSION_HOURS = 12
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "true").lower() == "true"
+AUTH_PUBLIC_PATHS = {
+    "/api/health",
+    "/api/auth/status",
+    "/api/auth/setup",
+    "/api/auth/login",
+}
+
+
+@app.middleware("http")
+async def require_authenticated_api(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/") or path in AUTH_PUBLIC_PATHS:
+        return await call_next(request)
+
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    user = get_authenticated_user(token) if token else None
+    if user is None:
+        response = JSONResponse(
+            {"detail": "Please sign in to use the arbitrage dashboard."},
+            status_code=401,
+        )
+        response.delete_cookie(
+            AUTH_COOKIE_NAME,
+            path="/",
+            secure=AUTH_COOKIE_SECURE,
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+
+    request.state.auth_user = user
+    return await call_next(request)
+
 
 class Outcome(BaseModel):
     selection: str
@@ -188,6 +229,214 @@ class BufferResolve(BaseModel):
 
 class PushSub(BaseModel):
     subscription: dict
+
+class AuthSetup(BaseModel):
+    setup_token: str = Field(min_length=1)
+    hunta_password: str = Field(min_length=12, max_length=256)
+    jay_password: str = Field(min_length=12, max_length=256)
+
+
+class AuthLogin(BaseModel):
+    username: Literal["hunta", "jay"]
+    password: str = Field(min_length=1, max_length=256)
+
+
+password_hasher = PasswordHasher()
+DUMMY_PASSWORD_HASH = password_hasher.hash(secrets.token_urlsafe(24))
+
+
+def token_digest(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def get_authenticated_user(token):
+    con = db()
+    try:
+        row = con.execute("""
+            SELECT auth_users.id, auth_users.username, auth_users.display_name,
+                   auth_sessions.expires_at
+            FROM auth_sessions
+            JOIN auth_users ON auth_users.id = auth_sessions.user_id
+            WHERE auth_sessions.token_hash = ? AND auth_users.is_active = 1
+        """, (token_digest(token),)).fetchone()
+
+        if not row:
+            return None
+        if row["expires_at"] <= now_text():
+            con.execute(
+                "DELETE FROM auth_sessions WHERE token_hash = ?",
+                (token_digest(token),),
+            )
+            con.commit()
+            return None
+
+        return {
+            "id": row["id"],
+            "username": row["username"],
+            "display_name": row["display_name"],
+        }
+    finally:
+        con.close()
+
+
+def auth_setup_required():
+    con = db()
+    try:
+        count = con.execute(
+            "SELECT COUNT(*) AS total FROM auth_users"
+        ).fetchone()["total"]
+        return count < 2
+    finally:
+        con.close()
+
+
+@app.get("/api/auth/status")
+def auth_status(request: Request):
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    user = get_authenticated_user(token) if token else None
+    return {
+        "authenticated": user is not None,
+        "setup_required": auth_setup_required(),
+        "user": user,
+    }
+
+
+@app.post("/api/auth/setup")
+def setup_authentication(req: AuthSetup):
+    expected_token = os.getenv("AUTH_SETUP_TOKEN", "")
+    if not expected_token:
+        raise HTTPException(
+            503,
+            "Account setup is disabled until AUTH_SETUP_TOKEN is configured.",
+        )
+    if not hmac.compare_digest(req.setup_token, expected_token):
+        raise HTTPException(403, "The setup token is invalid.")
+
+    con = db()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        count = con.execute(
+            "SELECT COUNT(*) AS total FROM auth_users"
+        ).fetchone()["total"]
+        if count:
+            raise HTTPException(409, "Initial account setup has already been completed.")
+
+        con.execute("""
+            INSERT INTO auth_users(username, display_name, password_hash)
+            VALUES (?, ?, ?), (?, ?, ?)
+        """, (
+            "hunta", "Hunta", password_hasher.hash(req.hunta_password),
+            "jay", "Jay", password_hasher.hash(req.jay_password),
+        ))
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+    return {"ok": True, "message": "Hunta and Jay accounts are ready. Please sign in."}
+
+
+@app.post("/api/auth/login")
+def login(req: AuthLogin, response: Response):
+    username = req.username.lower()
+    con = db()
+    try:
+        row = con.execute("""
+            SELECT id, username, display_name, password_hash,
+                   failed_attempts, locked_until, is_active
+            FROM auth_users
+            WHERE username = ?
+        """, (username,)).fetchone()
+
+        if row and row["locked_until"] and row["locked_until"] > now_text():
+            raise HTTPException(
+                423,
+                "This account is temporarily locked after failed sign-in attempts.",
+            )
+
+        stored_hash = row["password_hash"] if row else DUMMY_PASSWORD_HASH
+        verified = False
+        try:
+            password_hasher.verify(stored_hash, req.password)
+            verified = True
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            verified = False
+
+        if not row or not row["is_active"] or not verified:
+            if row:
+                attempts = int(row["failed_attempts"]) + 1
+                locked_until = (
+                    (now() + timedelta(minutes=15)).isoformat()
+                    if attempts >= 5 else None
+                )
+                con.execute("""
+                    UPDATE auth_users
+                    SET failed_attempts = ?, locked_until = ?
+                    WHERE id = ?
+                """, (attempts, locked_until, row["id"]))
+                con.commit()
+            raise HTTPException(401, "Username or password is incorrect.")
+
+        con.execute("""
+            UPDATE auth_users
+            SET failed_attempts = 0, locked_until = NULL, last_login = ?
+            WHERE id = ?
+        """, (now_text(), row["id"]))
+
+        token = secrets.token_urlsafe(32)
+        expires_at = (now() + timedelta(hours=AUTH_SESSION_HOURS)).isoformat()
+        con.execute("""
+            INSERT INTO auth_sessions(token_hash, user_id, expires_at)
+            VALUES (?, ?, ?)
+        """, (token_digest(token), row["id"], expires_at))
+        con.commit()
+
+        response.set_cookie(
+            AUTH_COOKIE_NAME,
+            token,
+            max_age=AUTH_SESSION_HOURS * 60 * 60,
+            httponly=True,
+            secure=AUTH_COOKIE_SECURE,
+            samesite="strict",
+            path="/",
+        )
+        return {
+            "ok": True,
+            "user": {
+                "username": row["username"],
+                "display_name": row["display_name"],
+            },
+            "expires_at": expires_at,
+        }
+    finally:
+        con.close()
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response):
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    if token:
+        con = db()
+        try:
+            con.execute(
+                "DELETE FROM auth_sessions WHERE token_hash = ?",
+                (token_digest(token),),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+    response.delete_cookie(
+        AUTH_COOKIE_NAME,
+        path="/",
+        secure=AUTH_COOKIE_SECURE,
+        httponly=True,
+        samesite="strict",
+    )
+    return {"ok": True}
+
 
 
 # ============================================================
@@ -580,7 +829,7 @@ def opportunities():
 # ============================================================
 
 @app.post("/api/positions/open")
-def open_position(req: OpenPosition):
+def open_position(req: OpenPosition, request: Request):
     if not req.manual_confirmation:
         raise HTTPException(400, "Manual confirmation of both bets is required.")
 
@@ -726,6 +975,7 @@ def open_position(req: OpenPosition):
                 "roi": result["roi"],
                 "scenarios": result["scenarios"],
                 "owners": sorted(owners),
+                "confirmed_by": request.state.auth_user["username"],
             }),
         ))
 
@@ -733,6 +983,7 @@ def open_position(req: OpenPosition):
         "ok": True,
         "position_id": position_id,
         "status": "Open",
+        "confirmed_by": request.state.auth_user["username"],
         **result,
         "message": (
             "Both legs recorded as manually accepted. "
