@@ -1,4 +1,6 @@
 import pytest
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 
 from app import database, main
@@ -306,3 +308,42 @@ def test_account_transactions_reject_withdrawals_beyond_recorded_balance(client)
         json={"transaction_type": "withdrawal", "amount": 131, "description": "Overdraw test"},
     )
     assert overdrawn.status_code == 409
+
+
+def test_live_odds_scan_is_manual_and_returns_qualified_candidate(client, monkeypatch):
+    assert login(client).status_code == 200
+    updated = datetime.now(timezone.utc).isoformat()
+    event = {
+        "id": "provider-event-1",
+        "sport_key": "soccer_epl",
+        "sport_title": "Soccer",
+        "home_team": "Test Home",
+        "away_team": "Test Away",
+        "commence_time": "2026-11-20T10:00:00Z",
+        "bookmakers": [{
+            "key": "sportsbet",
+            "title": "Sportsbet",
+            "markets": [{
+                "key": "h2h",
+                "last_update": updated,
+                "outcomes": [
+                    {"name": "Test Home", "price": 4.5},
+                    {"name": "Draw", "price": 4.5},
+                    {"name": "Test Away", "price": 4.5},
+                ],
+            }],
+        }],
+    }
+    monkeypatch.setattr(
+        main,
+        "fetch_json",
+        lambda *args, **kwargs: ([event], {"requests_remaining": 99}),
+    )
+
+    response = client.get("/api/odds/scan/soccer_epl")
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["qualified_count"] == 1
+    assert result["candidates"][0]["candidate"]["event"] == "Test Home vs Test Away"
+    assert result["quota"]["requests_remaining"] == 99
+    assert "manually" in result["candidates"][0]["warning"]
