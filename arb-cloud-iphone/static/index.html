@@ -356,6 +356,32 @@ async function recordPosition(){
   setTimeout(closeVetting,1400)
  }catch(e){message.textContent=e.message;button.disabled=false}
 }
+async function recordUnmatchedPosition(){
+ const accepted=Array.from(document.querySelectorAll('.leg-accepted')).filter(function(c){return c.checked}).length;
+ if(accepted!==1)return;
+ if(!confirm('Record one accepted leg as unmatched? This pauses new positions until the accepted leg is settled.'))return;
+ const eventId=slug(lastCandidate.event),marketId=slug(lastCandidate.market);
+ const outcomes=lastCandidate.outcomes.map(function(o){return slug(o.selection)});
+ if(new Set(outcomes).size!==2){document.getElementById('vettingMessage').textContent='The two selections need distinct names before they can be recorded.';document.getElementById('vettingMessage').classList.remove('hidden');return}
+ const request={
+  sport:lastCandidate.sport,event:lastCandidate.event,market:lastCandidate.market,
+  event_id:eventId,market_id:marketId,market_type:'binary',
+  possible_outcomes:outcomes,market_rules_verified:true,manual_confirmation:true,
+  notes:'One leg accepted; unmatched exposure recorded by '+(currentUser?currentUser.display_name:'signed-in user')+'.',
+  legs:lastCandidate.outcomes.map(function(o,i){
+   const check=document.querySelectorAll('.leg-accepted')[i];
+   return {account_id:Number(selectedLegAccounts[i].id),event_id:eventId,market_id:marketId,outcome_id:outcomes[i],selection:o.selection,odds:Number(o.odds),stake:Number(lastOpportunity.stakes[i]),commission_pct:Number(o.commission_pct||0),manually_accepted:check.checked}
+  })
+ };
+ const button=document.getElementById('recordUnmatchedButton'),message=document.getElementById('vettingMessage');
+ button.disabled=true;message.textContent='Recording unmatched exposure and pausing new positions…';message.classList.remove('hidden');
+ try{
+  const result=await api('/positions/unmatched',{method:'POST',body:JSON.stringify(request)});
+  message.textContent='Unmatched exposure recorded. '+result.message;
+  lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
+  setTimeout(closeVetting,3000)
+ }catch(e){message.textContent=e.message;button.disabled=false}
+}
 async function settle(positionId,legId){
  const actual=prompt('Enter the total return received from the bookmaker in AUD for this leg (include returned stake; enter 0 if lost):');if(actual===null)return;
  try{await api('/positions/'+positionId+'/legs/'+legId+'/settle',{method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:'Settled manually'})});refresh()}catch(e){alert(e.message)}
