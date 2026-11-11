@@ -435,3 +435,124 @@ def test_setup_cannot_replace_existing_accounts(client):
         },
     )
     assert response.status_code == 409
+
+
+def test_unmatched_position_accepts_only_risk_improving_manual_hedge(client):
+    assert login(client).status_code == 200
+    con = database.get_db()
+    try:
+        rows = con.execute(
+            """
+            SELECT id, owner, bookmaker FROM accounts
+            WHERE (owner = 'Hunta' AND bookmaker = 'Sportsbet')
+               OR (owner = 'Jay' AND bookmaker = 'Betfair')
+               OR (owner = 'Jay' AND bookmaker = 'Unibet')
+            """
+        ).fetchall()
+    finally:
+        con.close()
+    account_ids = {(row["owner"], row["bookmaker"]): row["id"] for row in rows}
+    headers = {"Origin": "http://testserver"}
+    for account_id in account_ids.values():
+        response = client.post(
+            f"/api/accounts/{account_id}/opening-balance",
+            headers=headers,
+            json={"amount": 500},
+        )
+        assert response.status_code == 200
+
+    payload = {
+        "sport": "Soccer",
+        "event": "Unmatched hedge scenario",
+        "market": "Two-outcome test market",
+        "event_id": "hedge-event",
+        "market_id": "hedge-market",
+        "market_type": "binary",
+        "possible_outcomes": ["home", "away"],
+        "market_rules_verified": True,
+        "manual_confirmation": True,
+        "legs": [
+            {
+                "account_id": account_ids[("Hunta", "Sportsbet")],
+                "event_id": "hedge-event",
+                "market_id": "hedge-market",
+                "outcome_id": "home",
+                "selection": "Home",
+                "odds": 2.1,
+                "stake": 100,
+                "manually_accepted": True,
+            },
+            {
+                "account_id": account_ids[("Jay", "Betfair")],
+                "event_id": "hedge-event",
+                "market_id": "hedge-market",
+                "outcome_id": "away",
+                "selection": "Away",
+                "odds": 2.1,
+                "stake": 100,
+                "manually_accepted": False,
+            },
+        ],
+    }
+    opened = client.post("/api/positions/unmatched", headers=headers, json=payload)
+    assert opened.status_code == 200, opened.text
+    position_id = opened.json()["position_id"]
+
+    hedge_payload = {
+        "account_id": account_ids[("Jay", "Unibet")],
+        "outcome_id": "home",
+        "selection": "Home",
+        "odds": 2.0,
+        "stake": 20,
+        "manual_confirmation": True,
+        "manually_accepted": True,
+    }
+    rejected = client.post(
+        f"/api/positions/{position_id}/hedge",
+        headers=headers,
+        json=hedge_payload,
+    )
+    assert rejected.status_code == 400
+    assert "does not improve" in rejected.json()["detail"]
+
+    hedge_payload.update({"outcome_id": "away", "selection": "Away", "stake": 55})
+    recorded = client.post(
+        f"/api/positions/{position_id}/hedge",
+        headers=headers,
+        json=hedge_payload,
+    )
+    assert recorded.status_code == 200, recorded.text
+    assert recorded.json()["position_status"] == "Unmatched"
+    assert recorded.json()["worst_case_profit_before"] == -100
+    assert recorded.json()["worst_case_profit_after"] == -45
+    assert client.get("/api/dashboard").json()["open_exposure"] == 255
+    balances = {
+        (row["owner"], row["bookmaker"]): row["balance"]
+        for row in client.get("/api/accounts").json()
+    }
+    assert balances[("Jay", "Unibet")] == 445
+
+    duplicate = client.post(
+        f"/api/positions/{position_id}/hedge",
+        headers=headers,
+        json=hedge_payload,
+    )
+    assert duplicate.status_code == 409
+
+    position = next(
+        item for item in client.get("/api/positions").json()
+        if item["id"] == position_id
+    )
+    accepted_legs = [leg for leg in position["legs"] if leg["accepted"]]
+    for leg in accepted_legs:
+        actual_return = 210 if leg["selection"] == "Home" else 0
+        settled = client.post(
+            f"/api/positions/{position_id}/legs/{leg['id']}/settle",
+            headers=headers,
+            json={"actual_return": actual_return, "notes": "Isolated hedge test"},
+        )
+        assert settled.status_code == 200, settled.text
+    final = client.get("/api/positions").json()
+    settled_position = next(item for item in final if item["id"] == position_id)
+    assert settled_position["status"] == "Settled"
+    assert settled_position["actual_pnl"] == 55
