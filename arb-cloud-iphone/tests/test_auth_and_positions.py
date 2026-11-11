@@ -60,6 +60,13 @@ def test_mutating_api_rejects_missing_or_cross_origin_origin(client):
     )
     assert cross_origin.status_code == 403
 
+    malformed_origin = client.post(
+        "/api/auth/login",
+        headers={"Origin": "http://[broken"},
+        json={"username": "hunta", "password": "wrong-password"},
+    )
+    assert malformed_origin.status_code == 403
+
 
 def test_expired_login_lockout_resets_failed_attempts(client):
     con = database.get_db()
