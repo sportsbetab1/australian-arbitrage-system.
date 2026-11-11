@@ -15,7 +15,8 @@ These values describe the backend constants. They are planning controls, not bal
 - Minimum calculated worst-case net ROI: 1.5%
 - Profit allocation after positive settled P/L: 75% reinvestment and 25% withdrawal
 - Betfair commission: currently assumed to be 6% on winnings, using a simplified model
-- Concurrent positions: limited by the exposure cap; each Betfair account is also limited to one unsettled leg. An older project discussion mentioned a 15-position cap; the current backend does not enforce that separate cap and should be reconciled before release.
+- Concurrent positions: capped at 15 open/unmatched positions and by the AUD 7,500 exposure limit; each Betfair account is also limited to one unsettled leg.
+- Bookmaker accounts are seeded for Sportsbet, Betfair, PointsBet, Unibet, Dabble, Picklebet, Ladbrokes, and TAB.
 - Position recording: binary/two-outcome markets only
 
 ## Sign-in and assisted vetting
@@ -80,7 +81,6 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 4. Reconcile manually entered bookmaker balances against statements and add adjustment/audit controls.
 5. Schedule backups to an off-site destination and run a documented restore drill.
 6. Expand security tests for session expiry, logout, lockout, origin checks, authorization boundaries, and recovery.
-7. Confirm whether the separate 15-position cap and TAB bookmaker from earlier project discussions remain requirements.
-8. Complete a security and recovery review before any deployment.
+7. Complete a security and recovery review before any deployment.
 
 Horse racing is a later phase and needs separate handling for dead heats, deductions, non-runners, starting-price/fixed-odds differences, and place terms.
