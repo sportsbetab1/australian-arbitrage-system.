@@ -68,7 +68,7 @@ dialog::backdrop{background:#0b1b2b99}
 <div class="grid">
  <div class="card"><div class="label">Starting bankroll</div><div class="metric" id="bankroll">$10,000</div></div>
  <div class="card"><div class="label">Open exposure</div><div class="metric" id="exposure">$0</div></div>
- <div class="card"><div class="label">Active sets</div><div class="metric" id="active">0 / 5</div></div>
+ <div class="card"><div class="label">Open positions</div><div class="metric" id="active">0</div></div>
  <div class="card"><div class="label">Available capacity</div><div class="metric" id="capacity">$2,500</div></div>
 </div>
 <div class="card">
@@ -226,7 +226,7 @@ function updateVettingAvailability(){
  const ready=!!(lastOpportunity&&lastOpportunity.qualified&&lastCandidate);
  const button=document.getElementById('openVettingButton');button.disabled=!ready;
  document.getElementById('vettingDock').classList.toggle('hidden',!ready);
- document.getElementById('vettingStatus').textContent=ready?'Qualified candidate ready • '+escapeHtml(lastCandidate.event):'Run a qualifying scan to open the review checklist.'
+ document.getElementById('vettingStatus').textContent=ready?'Qualified candidate ready • '+lastCandidate.event:'Run a qualifying scan to open the review checklist.'
 }
 function selectedAccountsFromUI(){
  return Array.from(lastCandidate.outcomes||[]).map(function(_,i){
