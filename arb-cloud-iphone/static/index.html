@@ -353,7 +353,11 @@ async function openVetting(){
  lastCandidate.outcomes.forEach(function(o,i){
   const options=accountsCache.filter(function(a){return a.status==='active'});
   const match=options.find(function(a){return a.bookmaker.toLowerCase()===o.bookmaker.toLowerCase()});
-  const htmlOptions=options.map(function(a){return '<option value="'+Number(a.id)+'" '+(match&&Number(match.id)===Number(a.id)?'selected':'')+'>'+escapeHtml(a.owner)+' — '+escapeHtml(a.bookmaker)+' (}).join('');
+  const htmlOptions=options.map(function(a){
+   const selectedAccount=match&&Number(match.id)===Number(a.id);
+   const label=escapeHtml(a.owner)+' — '+escapeHtml(a.bookmaker)+' ($'+Number(a.balance).toFixed(2)+')';
+   return '<option value="'+Number(a.id)+'" '+(selectedAccount?'selected':'')+'>'+label+'</option>';
+  }).join('');
   accountsEl.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+' at '+escapeHtml(o.bookmaker)+'</b><div class="muted">Suggested stake: $'+Number(lastOpportunity.stakes[i]).toFixed(2)+' at '+Number(o.odds).toFixed(2)+' odds</div><label for="accountForLeg'+i+'">Bookmaker account</label><select id="accountForLeg'+i+'">'+htmlOptions+'</select></div>'
  });
  document.querySelectorAll('.vetting-check').forEach(function(c){c.onchange=updateVettingContinue});
