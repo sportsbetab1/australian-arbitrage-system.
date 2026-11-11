@@ -178,6 +178,28 @@ def deliver_due(limit=MAX_BATCH):
     return {"sent": sent, "failed": failed, "queued": counts["queued"], "disabled": False}
 
 
+def delivery_status():
+    with get_db() as con:
+        rows = con.execute(
+            "SELECT status, COUNT(*) AS total FROM push_delivery_queue GROUP BY status"
+        ).fetchall()
+        dead = con.execute(
+            """
+            SELECT id, user_id, attempts, last_error, created_at, updated_at
+            FROM push_delivery_queue
+            WHERE status = 'dead'
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 20
+            """
+        ).fetchall()
+    counts = {status: 0 for status in ("pending", "sending", "sent", "dead")}
+    counts.update({row["status"]: row["total"] for row in rows})
+    return {
+        "counts": counts,
+        "dead_letters": [dict(row) for row in dead],
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Retry due push notification deliveries.")
     parser.add_argument("--limit", type=int, default=MAX_BATCH)
