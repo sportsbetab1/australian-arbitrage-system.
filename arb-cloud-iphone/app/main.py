@@ -2183,48 +2183,12 @@ def send_email(subject, body):
 
 def send_push(payload, user_id=None):
     try:
-        from pywebpush import webpush
+        from app import push_delivery
 
-        pub = os.getenv("VAPID_PUBLIC_KEY")
-        priv = os.getenv("VAPID_PRIVATE_KEY")
-        subject = os.getenv(
-            "VAPID_SUBJECT",
-            "mailto:admin@example.com",
-        )
-
-        if not pub or not priv:
-            return 0
-
-        with db() as con:
-            if user_id is None:
-                rows = con.execute(
-                    "SELECT subscription_json FROM push_subscriptions WHERE user_id IS NOT NULL"
-                ).fetchall()
-            else:
-                rows = con.execute(
-                    "SELECT subscription_json FROM push_subscriptions WHERE user_id = ?",
-                    (user_id,),
-                ).fetchall()
-
-        sent = 0
-
-        for row in rows:
-            try:
-                webpush(
-                    json.loads(row["subscription_json"]),
-                    json.dumps(payload),
-                    vapid_private_key=priv,
-                    vapid_claims={"sub": subject},
-                )
-                sent += 1
-            except Exception:
-                pass
-
-        return sent
-
+        push_delivery.enqueue(payload, user_id=user_id)
+        return push_delivery.deliver_due()["sent"]
     except Exception:
         return 0
-
 
 @app.post("/api/push/subscribe")
 def subscribe(req: PushSub, request: Request):
