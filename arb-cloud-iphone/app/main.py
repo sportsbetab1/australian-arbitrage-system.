@@ -1912,6 +1912,13 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg, request: Request):
         """, (position_id,)).fetchone()["total"]
 
         if remaining > 0:
+            create_user_notifications(
+                con,
+                "position_leg_settled",
+                position_id,
+                "Position leg settled",
+                f"{position['event']}: one leg settled; {remaining} accepted or pending leg(s) remain.",
+            )
             return {
                 "ok": True,
                 "leg_settled": True,
