@@ -60,6 +60,14 @@ def test_h2h_candidates_choose_best_effective_price_and_ignore_stale_data():
     stale = event_fixture("2020-01-01T00:00:00Z")
     assert build_h2h_candidates([stale], now=now) == []
 
+    started = event_fixture(updated)
+    started["commence_time"] = now.isoformat()
+    assert build_h2h_candidates([started], now=now) == []
+
+    undated = event_fixture(updated)
+    undated["commence_time"] = None
+    assert build_h2h_candidates([undated], now=now) == []
+
 
 def test_incomplete_fresh_market_is_not_returned():
     now = datetime.now(timezone.utc)
