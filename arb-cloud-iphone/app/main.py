@@ -3,6 +3,7 @@ import json
 import uuid
 import csv
 import io
+import re
 import smtplib
 import ssl
 import hashlib
@@ -20,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.database import get_db, init_db, migrate_position_schema
+from app.odds import OddsProviderError, build_h2h_candidates, fetch_json
 
 # ============================================================
 # SYSTEM SETTINGS
@@ -967,6 +969,94 @@ def scan(candidate: Candidate):
             "Indicative calculation only. Verify exact market rules, "
             "current odds, liquidity and commission manually."
         ),
+    }
+
+
+@app.get("/api/odds/sports")
+def odds_sports():
+    try:
+        data, usage = fetch_json(
+            os.getenv("ODDS_API_KEY", ""),
+            "sports",
+            {"all": "false"},
+            base_url=os.getenv("ODDS_API_BASE", "https://api.the-odds-api.com/v4"),
+        )
+    except OddsProviderError as error:
+        raise HTTPException(error.status_code, str(error)) from None
+    if not isinstance(data, list):
+        raise HTTPException(502, "The odds provider returned an invalid sports list.")
+    return {"sports": data, "quota": usage}
+
+
+@app.get("/api/odds/scan/{sport_key}")
+def scan_live_odds(sport_key: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", sport_key):
+        raise HTTPException(400, "Invalid odds-provider sport key.")
+    try:
+        events, usage = fetch_json(
+            os.getenv("ODDS_API_KEY", ""),
+            f"sports/{sport_key}/odds",
+            {"regions": "au", "markets": "h2h", "oddsFormat": "decimal", "dateFormat": "iso"},
+            base_url=os.getenv("ODDS_API_BASE", "https://api.the-odds-api.com/v4"),
+        )
+    except OddsProviderError as error:
+        raise HTTPException(error.status_code, str(error)) from None
+    if not isinstance(events, list):
+        raise HTTPException(502, "The odds provider returned an invalid event list.")
+
+    results = []
+    for raw in build_h2h_candidates(events):
+        candidate_data = {
+            "sport": raw["sport"],
+            "event": raw["event"],
+            "market": raw["market"],
+            "outcomes": raw["outcomes"],
+            "total_stake": 500.0,
+        }
+        candidate = Candidate(**candidate_data)
+        result = calculate(candidate)
+        if result["roi"] < MIN_NET_ROI:
+            continue
+
+        opportunity_id = str(uuid.uuid4())
+        with db() as con:
+            con.execute("""
+                INSERT INTO opportunities
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                opportunity_id,
+                now_text(),
+                candidate.sport,
+                candidate.event,
+                candidate.market,
+                json.dumps(candidate.model_dump()["outcomes"]),
+                result["sum_inverse"],
+                result["roi"],
+                json.dumps(result["stakes"]),
+                "Live candidate",
+            ))
+        results.append({
+            "qualified": True,
+            "opportunity_id": opportunity_id,
+            **result,
+            "candidate": candidate.model_dump(),
+            "provider_event_id": raw["event_id"],
+            "commence_time": raw["commence_time"],
+            "source_updated_at": raw["source_updated_at"],
+            "warning": (
+                "Live odds are a candidate only. Confirm the event, exact market rules, "
+                "current bookmaker prices, liquidity, and acceptance manually."
+            ),
+        })
+
+    results.sort(key=lambda item: item["roi"], reverse=True)
+    return {
+        "sport_key": sport_key,
+        "events_received": len(events),
+        "qualified_count": len(results),
+        "candidates": results,
+        "quota": usage,
+        "scanned_at": now_text(),
     }
 
 
