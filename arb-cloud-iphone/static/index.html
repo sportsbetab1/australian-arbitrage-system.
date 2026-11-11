@@ -463,7 +463,133 @@ function beginManualPlacement(){
  selectedLegAccounts=selectedAccountsFromUI();
  const target=document.getElementById('manualLegChecks');target.innerHTML='';
  lastCandidate.outcomes.forEach(function(o,i){
-  target.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+'</b><div>'+escapeHtml(o.bookmaker)+' • '+Number(o.odds).toFixed(2)+' odds • stake $'+Number(lastOpportunity.stakes[i]).toFixed(2)+'</div><label class="check-row"><input type="checkbox" class="leg-accepted">This leg was placed manually and the bookmaker accepted it.</label></div>'
+  target.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+'</b><div class="muted">Suggested: '+escapeHtml(o.bookmaker)+' • '+Number(o.odds).toFixed(2)+' odds • stake 
+ });
+ document.getElementById('vettingReviewStage').classList.add('hidden');
+ document.getElementById('manualPlacementStage').classList.remove('hidden');
+ document.getElementById('recordPositionButton').disabled=true;
+ document.getElementById('allPlaced').onchange=updateRecordPosition;
+ document.querySelectorAll('.leg-accepted').forEach(function(c){c.onchange=updateRecordPosition});
+ document.querySelectorAll('.placed-odds,.placed-stake').forEach(function(c){c.oninput=updateRecordPosition})
+}
+function updateRecordPosition(){
+ const checks=Array.from(document.querySelectorAll('.leg-accepted'));
+ const acceptedCount=checks.filter(function(c){return c.checked}).length;
+ const acceptedValuesValid=checks.every(function(c,i){
+  if(!c.checked)return true;
+  const odds=Number(document.getElementById('placedOdds'+i).value);
+  const stake=Number(document.getElementById('placedStake'+i).value);
+  return Number.isFinite(odds)&&odds>1&&Number.isFinite(stake)&&stake>0
+ });
+ document.getElementById('recordPositionButton').disabled=!(acceptedCount===2&&acceptedValuesValid&&document.getElementById('allPlaced').checked);
+ document.getElementById('recordUnmatchedButton').disabled=!(acceptedCount===1&&acceptedValuesValid)
+}
+async function recordPosition(){
+ updateRecordPosition();if(document.getElementById('recordPositionButton').disabled)return;
+ const eventId=slug(lastCandidate.event),marketId=slug(lastCandidate.market);
+ const outcomes=lastCandidate.outcomes.map(function(o){return slug(o.selection)});
+ if(new Set(outcomes).size!==2){document.getElementById('vettingMessage').textContent='The two selections need distinct names before they can be recorded.';document.getElementById('vettingMessage').classList.remove('hidden');return}
+ const request={
+  sport:lastCandidate.sport,event:lastCandidate.event,market:lastCandidate.market,
+  event_id:eventId,market_id:marketId,market_type:'binary',
+  possible_outcomes:outcomes,market_rules_verified:true,manual_confirmation:true,
+  notes:'Assisted vetting completed and both legs manually confirmed by '+(currentUser?currentUser.display_name:'signed-in user')+'.',
+  legs:lastCandidate.outcomes.map(function(o,i){
+   return {account_id:Number(selectedLegAccounts[i].id),event_id:eventId,market_id:marketId,outcome_id:outcomes[i],selection:o.selection,odds:Number(document.getElementById('placedOdds'+i).value),stake:Number(document.getElementById('placedStake'+i).value),commission_pct:Number(o.commission_pct||0),manually_accepted:true}
+  })
+ };
+ const button=document.getElementById('recordPositionButton'),message=document.getElementById('vettingMessage');
+ button.disabled=true;message.textContent='Recording the manually placed position…';message.classList.remove('hidden');
+ try{
+  const result=await api('/positions/open',{method:'POST',body:JSON.stringify(request)});
+  message.textContent='Position recorded. '+result.message;
+  lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
+  setTimeout(closeVetting,1400)
+ }catch(e){message.textContent=e.message;button.disabled=false}
+}
+async function recordUnmatchedPosition(){
+ updateRecordPosition();
+ if(document.getElementById('recordUnmatchedButton').disabled)return;
+ const accepted=Array.from(document.querySelectorAll('.leg-accepted')).filter(function(c){return c.checked}).length;
+ if(accepted!==1)return;
+ if(!confirm('Record one accepted leg as unmatched? This pauses new positions until the accepted leg is settled.'))return;
+ const eventId=slug(lastCandidate.event),marketId=slug(lastCandidate.market);
+ const outcomes=lastCandidate.outcomes.map(function(o){return slug(o.selection)});
+ if(new Set(outcomes).size!==2){document.getElementById('vettingMessage').textContent='The two selections need distinct names before they can be recorded.';document.getElementById('vettingMessage').classList.remove('hidden');return}
+ const request={
+  sport:lastCandidate.sport,event:lastCandidate.event,market:lastCandidate.market,
+  event_id:eventId,market_id:marketId,market_type:'binary',
+  possible_outcomes:outcomes,market_rules_verified:true,manual_confirmation:true,
+  notes:'One leg accepted; unmatched exposure recorded by '+(currentUser?currentUser.display_name:'signed-in user')+'.',
+  legs:lastCandidate.outcomes.map(function(o,i){
+   const check=document.querySelectorAll('.leg-accepted')[i];
+   return {account_id:Number(selectedLegAccounts[i].id),event_id:eventId,market_id:marketId,outcome_id:outcomes[i],selection:o.selection,odds:check.checked?Number(document.getElementById('placedOdds'+i).value):Number(o.odds),stake:check.checked?Number(document.getElementById('placedStake'+i).value):Number(lastOpportunity.stakes[i]),commission_pct:Number(o.commission_pct||0),manually_accepted:check.checked}
+  })
+ };
+ const button=document.getElementById('recordUnmatchedButton'),message=document.getElementById('vettingMessage');
+ button.disabled=true;message.textContent='Recording unmatched exposure and pausing new positions…';message.classList.remove('hidden');
+ try{
+  const result=await api('/positions/unmatched',{method:'POST',body:JSON.stringify(request)});
+  message.textContent='Unmatched exposure recorded. '+result.message;
+  lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
+  setTimeout(closeVetting,3000)
+ }catch(e){message.textContent=e.message;button.disabled=false}
+}
+function showHedgeForm(positionId){
+ const position=positionsCache.find(function(x){return Number(x.id)===Number(positionId)});
+ const target=document.getElementById('hedge-form-'+Number(positionId));
+ if(!position||!target)return;
+ let outcomes=[];try{outcomes=JSON.parse(position.possible_outcomes_json||'[]')}catch(e){}
+ const accounts=accountsCache.filter(function(a){return a.status==='active'});
+ const currency=String.fromCharCode(36);
+ target.innerHTML='<p class="muted">Place the hedge yourself first. Choose an outcome and account, then confirm bookmaker acceptance.</p>'+
+  '<label>Hedge outcome</label><select id="hedge-outcome-'+positionId+'">'+outcomes.map(function(o){return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'}).join('')+'</select>'+
+  '<label>Bookmaker account</label><select id="hedge-account-'+positionId+'">'+accounts.map(function(a){return '<option value="'+Number(a.id)+'">'+escapeHtml(a.owner)+' — '+escapeHtml(a.bookmaker)+' (AUD '+Number(a.balance).toFixed(2)+')</option>'}).join('')+'</select>'+
+  '<label>Accepted decimal odds</label><input id="hedge-odds-'+positionId+'" type="number" min="1.01" step="0.01" inputmode="decimal">'+
+  '<label>Accepted stake (AUD)</label><input id="hedge-stake-'+positionId+'" type="number" min="0.01" step="0.01" inputmode="decimal">'+
+  '<button type="button" onclick="recordHedge('+Number(positionId)+')">Confirm accepted hedge</button>';
+ target.classList.remove('hidden')
+}
+async function recordHedge(positionId){
+ const accountId=Number(document.getElementById('hedge-account-'+positionId).value);
+ const outcomeId=document.getElementById('hedge-outcome-'+positionId).value;
+ if(!confirm('Have you personally placed this hedge and verified bookmaker acceptance at these odds and stake?'))return;
+ const payload={
+  account_id:accountId,outcome_id:outcomeId,selection:outcomeId,
+  odds:Number(document.getElementById('hedge-odds-'+positionId).value),
+  stake:Number(document.getElementById('hedge-stake-'+positionId).value),
+  manual_confirmation:true,manually_accepted:true,
+  notes:'Hedge manually placed and acceptance confirmed by '+(currentUser?currentUser.display_name:'signed-in user')
+ };
+ try{
+  const result=await api('/positions/'+Number(positionId)+'/hedge',{method:'POST',body:JSON.stringify(payload)});
+  alert(result.message+' Worst-case return improved from AUD '+Number(result.worst_case_profit_before).toFixed(2)+' to AUD '+Number(result.worst_case_profit_after).toFixed(2)+'.');
+  await refresh()
+ }catch(e){alert(e.message)}
+}
+async function settle(positionId,legId){
+ const actual=prompt('Enter the total return received from the bookmaker in AUD for this leg (include returned stake; enter 0 if lost):');
+ if(actual===null)return;
+ try{
+  await api('/positions/'+positionId+'/legs/'+legId+'/settle',{
+   method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:'Settled manually'})
+  });
+  await refresh()
+ }catch(e){alert(e.message)}
+}
+async function enablePush(){
+ try{
+  if(!('serviceWorker' in navigator)||!('PushManager' in window))throw Error('Push is not supported in this browser. On iPhone, install this site to Home Screen and open it there (iOS 16.4+).');
+  const key=await api('/push/public-key');if(!key.public_key)throw Error('Cloud VAPID keys are not configured yet.');
+  const reg=await navigator.serviceWorker.register('/static/sw.js');
+  const permission=await Notification.requestPermission();if(permission!=='granted')throw Error('Notification permission not granted.');
+  const b=Uint8Array.from(atob(key.public_key.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b});
+  await api('/push/subscribe',{method:'POST',body:JSON.stringify({subscription:sub})});alert('Push notifications enabled.');
+ }catch(e){alert(e.message)}
+}
+initialize();
+</script></body></html>+Number(lastOpportunity.stakes[i]).toFixed(2)+'</div><label for="placedOdds'+i+'">Accepted decimal odds</label><input id="placedOdds'+i+'" class="placed-odds" type="number" min="1.01" step="0.01" value="'+Number(o.odds).toFixed(2)+'"><label for="placedStake'+i+'">Accepted stake (AUD)</label><input id="placedStake'+i+'" class="placed-stake" type="number" min="0.01" step="0.01" value="'+Number(lastOpportunity.stakes[i]).toFixed(2)+'"><label class="check-row"><input type="checkbox" class="leg-accepted">This leg was placed manually and the bookmaker accepted it.</label></div>'
  });
  document.getElementById('vettingReviewStage').classList.add('hidden');
  document.getElementById('manualPlacementStage').classList.remove('hidden');
