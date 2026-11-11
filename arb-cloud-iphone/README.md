@@ -34,7 +34,7 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 - Bookmaker balances are entered and tracked manually. Opening balances, deposits, withdrawals, accepted stakes, settlement returns, and reasoned balance reconciliations are journaled and audited; balances are not synced with bookmakers and must be checked against statements.
 - Position tracking is binary only. The candidate calculator may calculate other outcome counts, but the assisted position workflow does not support them.
 - Betfair commission is hard-coded by bookmaker name and approximated; verify the actual commission and market rules manually.
-- In-app notifications are stored per user for position opened/unmatched and settled events, and each user has independent read state. Push subscriptions are stored per signed-in user; delivery endpoints must use HTTPS on Google FCM, Apple Web Push, or Mozilla Push Services hosts. Push alerts are attempted after open and final-settlement events when VAPID keys are configured; delivery has no persistent retry queue, and email alerts are not wired to these events.
+- In-app notifications are stored per user for opened, unmatched, partial-leg settlement, and final settlement events, with independent read state. Push subscriptions are stored per signed-in user; delivery endpoints must use HTTPS on Google FCM, Apple Web Push, or Mozilla Push Services hosts. Push events enter a persistent outbox and are attempted immediately when VAPID keys are configured. Failed attempts retry with exponential backoff for up to 10 attempts; exhausted deliveries are marked dead for review. Email alerts are not wired to these events.
 - Settlement summary and CSV export are available in the authenticated dashboard.
 - The authenticated dashboard can create and list integrity-checked SQLite snapshots; the restore script validates its source and preserves a pre-restore safety copy. Backups remain manual and on the same storage volume by default; off-site storage, automated scheduling, and a production restore drill remain outstanding.
 - Password recovery, monitoring, and production readiness work remain outstanding.
@@ -59,6 +59,14 @@ Run the isolated test suite from this directory:
 pytest -q
 ```
 
+To retry due push notifications, schedule this command on the host (for example, every minute). The application attempts each new event immediately; the command retries failures with backoff:
+
+```bash
+python -m app.push_delivery --limit 100
+```
+
+The script does not create its own scheduler. If VAPID keys are missing, queued messages remain pending without consuming an attempt.
+
 GitHub Actions runs Python compilation, the isolated pytest suite, and a JavaScript syntax check on pull-request and development-branch updates. The workflow contains no deploy step.
 
 ## Intended workflow
@@ -77,7 +85,7 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 
 1. Extend unmatched recovery with cashout and partial-fill records. The current recovery path permits repeated manually accepted hedges only when each improves the worst-case result; it reserves planned exposure and pauses new positions until settlement.
 2. Verify The Odds API coverage, event/market matching, provider freshness, and bookmaker-specific rules in a controlled review before relying on feed candidates.
-3. Add persistent push delivery retries and connect email alerts to the existing event notifications.
+3. Connect email alerts to the existing event notifications and schedule the push retry command on the host.
 4. Reconcile manually entered bookmaker balances against statements and add adjustment/audit controls.
 5. Schedule backups to an off-site destination and run a documented restore drill.
 6. Expand security tests for session expiry, logout, lockout, origin checks, authorization boundaries, and recovery.
