@@ -574,3 +574,76 @@ def test_session_cookie_is_http_only_same_site_and_time_limited(client):
     assert "httponly" in cookie
     assert "samesite=strict" in cookie
     assert "max-age=43200" in cookie
+
+
+def test_push_subscriptions_are_user_scoped(client, monkeypatch):
+    import sys
+    import types
+
+    assert login(client, username="hunta").status_code == 200
+    headers = {"Origin": "http://testserver"}
+    subscription_hunta = {
+        "endpoint": "https://push.example.test/hunta",
+        "keys": {"p256dh": "hunta-key", "auth": "hunta-auth"},
+    }
+    saved = client.post(
+        "/api/push/subscribe",
+        headers=headers,
+        json={"subscription": subscription_hunta},
+    )
+    assert saved.status_code == 200
+
+    con = database.get_db()
+    try:
+        hunta_id = con.execute(
+            "SELECT id FROM auth_users WHERE username = 'hunta'"
+        ).fetchone()["id"]
+        jay_id = con.execute(
+            "SELECT id FROM auth_users WHERE username = 'jay'"
+        ).fetchone()["id"]
+        row = con.execute(
+            "SELECT user_id FROM push_subscriptions WHERE subscription_json LIKE '%hunta%'"
+        ).fetchone()
+        assert row["user_id"] == hunta_id
+    finally:
+        con.close()
+
+    assert login(client, username="jay", password="Jay-test-passphrase-2026").status_code == 200
+    subscription_jay = {
+        "endpoint": "https://push.example.test/jay",
+        "keys": {"p256dh": "jay-key", "auth": "jay-auth"},
+    }
+    assert client.post(
+        "/api/push/subscribe",
+        headers=headers,
+        json={"subscription": subscription_jay},
+    ).status_code == 200
+
+    delivered = []
+    fake_module = types.ModuleType("pywebpush")
+    fake_module.webpush = lambda subscription, payload, **kwargs: delivered.append(subscription["endpoint"])
+    monkeypatch.setitem(sys.modules, "pywebpush", fake_module)
+    monkeypatch.setenv("VAPID_PUBLIC_KEY", "public-test")
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "private-test")
+
+    assert main.send_push({"title": "test"}, user_id=hunta_id) == 1
+    assert delivered == ["https://push.example.test/hunta"]
+    assert main.send_push({"title": "test"}, user_id=jay_id) == 1
+    assert delivered[-1] == "https://push.example.test/jay"
+
+
+def test_push_subscription_requires_safe_https_endpoint(client):
+    assert login(client).status_code == 200
+    headers = {"Origin": "http://testserver"}
+    for endpoint in ("http://push.example.test/sub", "https://localhost/sub"):
+        response = client.post(
+            "/api/push/subscribe",
+            headers=headers,
+            json={
+                "subscription": {
+                    "endpoint": endpoint,
+                    "keys": {"p256dh": "test-key", "auth": "test-auth"},
+                }
+            },
+        )
+        assert response.status_code == 400
