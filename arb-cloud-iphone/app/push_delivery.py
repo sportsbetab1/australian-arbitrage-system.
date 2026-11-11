@@ -8,9 +8,8 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
-import time
 
-from pywebpush import WebPushException, webpush
+from pywebpush import webpush
 
 from app.database import get_db
 
@@ -82,7 +81,12 @@ def deliver_due(limit=MAX_BATCH):
     public_key = os.getenv("VAPID_PUBLIC_KEY")
     private_key = os.getenv("VAPID_PRIVATE_KEY")
     if not public_key or not private_key:
-        return {"sent": 0, "failed": 0, "queued": 0, "disabled": True}
+        with get_db() as con:
+            queued = con.execute(
+                "SELECT COUNT(*) AS queued FROM push_delivery_queue "
+                "WHERE status IN ('pending', 'sending')"
+            ).fetchone()["queued"]
+        return {"sent": 0, "failed": 0, "queued": queued, "disabled": True}
 
     subject = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com")
     sent = failed = 0
