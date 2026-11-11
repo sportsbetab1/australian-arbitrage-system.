@@ -108,11 +108,8 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
                         best[name] = item
 
         outcomes = list(best.values())
-        if (
-            len(outcomes) < 2
-            or len(outcomes) > 3
-            or set(best) != possible_outcomes
-        ):
+        expected_count = 3 if str(event.get("sport_key", "")).startswith("soccer_") else 2
+        if len(outcomes) != expected_count or set(best) != possible_outcomes:
             continue
         candidates.append({
             "sport": event.get("sport_title") or event.get("sport_key") or "Unknown sport",
