@@ -640,7 +640,7 @@ def test_push_subscriptions_are_user_scoped(client, monkeypatch):
     assert login(client, username="hunta").status_code == 200
     headers = {"Origin": "http://testserver"}
     subscription_hunta = {
-        "endpoint": "https://push.example.test/hunta",
+        "endpoint": "https://fcm.googleapis.com/hunta",
         "keys": {"p256dh": "hunta-key", "auth": "hunta-auth"},
     }
     saved = client.post(
@@ -667,7 +667,7 @@ def test_push_subscriptions_are_user_scoped(client, monkeypatch):
 
     assert login(client, username="jay", password="Jay-test-passphrase-2026").status_code == 200
     subscription_jay = {
-        "endpoint": "https://push.example.test/jay",
+        "endpoint": "https://fcm.googleapis.com/jay",
         "keys": {"p256dh": "jay-key", "auth": "jay-auth"},
     }
     assert client.post(
@@ -684,9 +684,9 @@ def test_push_subscriptions_are_user_scoped(client, monkeypatch):
     monkeypatch.setenv("VAPID_PRIVATE_KEY", "private-test")
 
     assert main.send_push({"title": "test"}, user_id=hunta_id) == 1
-    assert delivered == ["https://push.example.test/hunta"]
+    assert delivered == ["https://fcm.googleapis.com/hunta"]
     assert main.send_push({"title": "test"}, user_id=jay_id) == 1
-    assert delivered[-1] == "https://push.example.test/jay"
+    assert delivered[-1] == "https://fcm.googleapis.com/jay"
 
 
 def test_push_subscription_requires_safe_https_endpoint(client):
