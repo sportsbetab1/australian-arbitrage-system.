@@ -776,3 +776,38 @@ def test_authenticated_user_can_create_and_list_integrity_checked_backup(client,
         assert "hunta" in audit["details"]
     finally:
         con.close()
+
+
+def test_non_finite_financial_inputs_are_rejected(client):
+    assert login(client).status_code == 200
+    headers = {"Origin": "http://testserver"}
+    con = database.get_db()
+    try:
+        account_id = con.execute(
+            "SELECT id FROM accounts WHERE owner = 'Hunta' AND bookmaker = 'Sportsbet'"
+        ).fetchone()["id"]
+    finally:
+        con.close()
+
+    opening = client.post(
+        f"/api/accounts/{account_id}/opening-balance",
+        headers=headers,
+        json={"amount": float("inf")},
+    )
+    assert opening.status_code == 422
+
+    scan = client.post(
+        "/api/scan",
+        headers=headers,
+        json={
+            "sport": "Test",
+            "event": "Non-finite input",
+            "market": "Winner",
+            "outcomes": [
+                {"selection": "A", "bookmaker": "Book A", "odds": float("nan")},
+                {"selection": "B", "bookmaker": "Book B", "odds": 2.0},
+            ],
+            "total_stake": 100,
+        },
+    )
+    assert scan.status_code == 422
