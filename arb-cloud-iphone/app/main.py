@@ -1607,6 +1607,12 @@ def reports_summary():
     }
 
 
+def csv_safe_cell(value):
+    if isinstance(value, str) and value.lstrip()[:1] in {"=", "+", "-", "@", "\t", "\r"}:
+        return "'" + value
+    return value
+
+
 @app.get("/api/reports/settlements.csv")
 def settlements_csv():
     with db() as con:
@@ -1628,7 +1634,7 @@ def settlements_csv():
         "planned_stake", "expected_roi", "actual_pnl", "commission_paid",
     ])
     for row in rows:
-        writer.writerow([row[key] for key in row.keys()])
+        writer.writerow([csv_safe_cell(row[key]) for key in row.keys()])
     return Response(
         content=output.getvalue(),
         media_type="text/csv",
