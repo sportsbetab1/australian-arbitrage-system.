@@ -64,7 +64,8 @@ def test_h2h_candidates_choose_best_effective_price_and_ignore_stale_data():
 def test_incomplete_fresh_market_is_not_returned():
     now = datetime.now(timezone.utc)
     event = event_fixture(now.isoformat())
-    event["bookmakers"][0]["markets"][0]["outcomes"].pop()
+    for bookmaker in event["bookmakers"]:
+        bookmaker["markets"][0]["outcomes"].pop()
     assert build_h2h_candidates([event], now=now) == []
 
 
