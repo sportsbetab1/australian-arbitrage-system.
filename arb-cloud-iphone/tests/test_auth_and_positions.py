@@ -805,6 +805,7 @@ def test_non_finite_financial_inputs_are_rejected(client):
 
 
 def test_open_position_cap_is_fifteen_and_is_enforced(client):
+    assert login(client).status_code == 200
     with database.get_db() as con:
         for index in range(main.MAX_OPEN_POSITIONS - 1):
             con.execute(
