@@ -1835,8 +1835,10 @@ def positions():
 
 
 @app.post("/api/positions/{position_id}/legs/{leg_id}/settle")
-def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
+def settle_leg(position_id: int, leg_id: int, req: SettleLeg, request: Request):
     with db() as con:
+        # Serialize concurrent settlement requests before checking the settled flag.
+        con.execute("BEGIN IMMEDIATE")
         position = con.execute("""
             SELECT *
             FROM positions
@@ -1888,6 +1890,20 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
             f"Position {position_id} settlement return after commission",
             leg_id,
         ))
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            (
+                "position_leg_settled",
+                json.dumps({
+                    "position_id": position_id,
+                    "leg_id": leg_id,
+                    "actual_return": req.actual_return,
+                    "commission_paid": commission_paid,
+                    "recorded_by": request.state.auth_user["username"],
+                    "notes": req.notes,
+                }),
+            ),
+        )
 
         remaining = con.execute("""
             SELECT COUNT(*) AS total
