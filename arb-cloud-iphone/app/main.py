@@ -2226,13 +2226,19 @@ def subscribe(req: PushSub, request: Request):
         parsed = None
     if (
         parsed is None
+        or not isinstance(endpoint, str)
+        or len(endpoint) > 4096
         or parsed.scheme.lower() != "https"
         or not parsed.hostname
         or parsed.username
         or parsed.password
         or not isinstance(keys, dict)
+        or not isinstance(keys.get("p256dh"), str)
+        or not isinstance(keys.get("auth"), str)
         or not keys.get("p256dh")
         or not keys.get("auth")
+        or len(keys.get("p256dh", "")) > 512
+        or len(keys.get("auth", "")) > 512
     ):
         raise HTTPException(400, "A valid HTTPS push subscription is required.")
 
@@ -2254,6 +2260,8 @@ def subscribe(req: PushSub, request: Request):
         raise HTTPException(400, "The push subscription host is not allowed.")
 
     subscription_json = json.dumps(req.subscription, separators=(",", ":"), sort_keys=True)
+    if len(subscription_json.encode("utf-8")) > 8192:
+        raise HTTPException(400, "Push subscription data is too large.")
     user_id = request.state.auth_user["id"]
     with db() as con:
         con.execute("""
