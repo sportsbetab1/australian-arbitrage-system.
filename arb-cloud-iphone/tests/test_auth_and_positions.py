@@ -99,6 +99,13 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client):
     finally:
         con.close()
     account_ids = {(row["owner"], row["bookmaker"]): row["id"] for row in accounts}
+    for account_id in account_ids.values():
+        funded = client.post(
+            f"/api/accounts/{account_id}/opening-balance",
+            headers={"Origin": "http://testserver"},
+            json={"amount": 500},
+        )
+        assert funded.status_code == 200, funded.text
 
     payload = {
         "sport": "Soccer",
@@ -145,6 +152,31 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client):
     assert result["status"] == "Open"
     assert result["confirmed_by"] == "hunta"
     assert "No bookmaker bets were placed" in result["message"]
+    balances = {
+        (row["owner"], row["bookmaker"]): row["balance"]
+        for row in client.get("/api/accounts").json()
+    }
+    assert balances[("Hunta", "Sportsbet")] == 400
+    assert balances[("Jay", "Betfair")] == 400
+
+    settled_first = client.post(
+        f"/api/positions/{result['position_id']}/legs/1/settle",
+        headers={"Origin": "http://testserver"},
+        json={"actual_return": 210, "notes": "Test settlement"},
+    )
+    assert settled_first.status_code == 200
+    settled_second = client.post(
+        f"/api/positions/{result['position_id']}/legs/2/settle",
+        headers={"Origin": "http://testserver"},
+        json={"actual_return": 210, "notes": "Test settlement"},
+    )
+    assert settled_second.status_code == 200
+    balances = {
+        (row["owner"], row["bookmaker"]): row["balance"]
+        for row in client.get("/api/accounts").json()
+    }
+    assert balances[("Hunta", "Sportsbet")] == 610
+    assert balances[("Jay", "Betfair")] == 503.4
 
 
 def test_unmatched_leg_is_reserved_pauses_new_positions_and_can_settle(client):
@@ -160,6 +192,13 @@ def test_unmatched_leg_is_reserved_pauses_new_positions_and_can_settle(client):
     finally:
         con.close()
     account_ids = {(row["owner"], row["bookmaker"]): row["id"] for row in accounts}
+    for account_id in account_ids.values():
+        funded = client.post(
+            f"/api/accounts/{account_id}/opening-balance",
+            headers={"Origin": "http://testserver"},
+            json={"amount": 500},
+        )
+        assert funded.status_code == 200, funded.text
 
     payload = {
         "sport": "Soccer",
@@ -226,3 +265,44 @@ def test_unmatched_leg_is_reserved_pauses_new_positions_and_can_settle(client):
     assert settled.json()["position_status"] == "Settled"
     assert settled.json()["actual_pnl"] == 110
     assert client.get("/api/dashboard").json()["open_positions"] == 0
+
+def test_account_transactions_reject_withdrawals_beyond_recorded_balance(client):
+    assert login(client).status_code == 200
+    con = database.get_db()
+    try:
+        account_id = con.execute(
+            "SELECT id FROM accounts WHERE owner = 'Hunta' AND bookmaker = 'Sportsbet'"
+        ).fetchone()["id"]
+    finally:
+        con.close()
+
+    headers = {"Origin": "http://testserver"}
+    initialized = client.post(
+        f"/api/accounts/{account_id}/opening-balance",
+        headers=headers,
+        json={"amount": 100},
+    )
+    assert initialized.status_code == 200
+
+    deposited = client.post(
+        f"/api/accounts/{account_id}/transactions",
+        headers=headers,
+        json={"transaction_type": "deposit", "amount": 50, "description": "Test deposit"},
+    )
+    assert deposited.status_code == 200
+    assert deposited.json()["balance"] == 150
+
+    withdrawn = client.post(
+        f"/api/accounts/{account_id}/transactions",
+        headers=headers,
+        json={"transaction_type": "withdrawal", "amount": 20, "description": "Test withdrawal"},
+    )
+    assert withdrawn.status_code == 200
+    assert withdrawn.json()["balance"] == 130
+
+    overdrawn = client.post(
+        f"/api/accounts/{account_id}/transactions",
+        headers=headers,
+        json={"transaction_type": "withdrawal", "amount": 131, "description": "Overdraw test"},
+    )
+    assert overdrawn.status_code == 409
