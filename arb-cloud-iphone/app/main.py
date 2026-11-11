@@ -148,6 +148,30 @@ AUTH_PUBLIC_PATHS = {
 @app.middleware("http")
 async def require_authenticated_api(request: Request, call_next):
     path = request.url.path
+    if path.startswith("/api/") and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        from urllib.parse import urlsplit
+
+        origin = request.headers.get("origin")
+        request_host = request.headers.get("host", "").lower()
+        forwarded_scheme = request.headers.get("x-forwarded-proto", "")
+        expected_scheme = (
+            forwarded_scheme.split(",")[0].strip().lower()
+            if forwarded_scheme else request.url.scheme.lower()
+        )
+        parsed_origin = urlsplit(origin) if origin else None
+        if (
+            parsed_origin is None
+            or parsed_origin.scheme.lower() != expected_scheme
+            or parsed_origin.netloc.lower() != request_host
+            or parsed_origin.path not in ("", "/")
+            or parsed_origin.query
+            or parsed_origin.fragment
+        ):
+            return JSONResponse(
+                {"detail": "Request origin is not allowed."},
+                status_code=403,
+            )
+
     if not path.startswith("/api/") or path in AUTH_PUBLIC_PATHS:
         return await call_next(request)
 
@@ -350,11 +374,20 @@ def login(req: AuthLogin, response: Response):
             WHERE username = ?
         """, (username,)).fetchone()
 
-        if row and row["locked_until"] and row["locked_until"] > now_text():
-            raise HTTPException(
-                423,
-                "This account is temporarily locked after failed sign-in attempts.",
-            )
+        failed_attempts = int(row["failed_attempts"]) if row else 0
+        if row and row["locked_until"]:
+            if row["locked_until"] > now_text():
+                raise HTTPException(
+                    423,
+                    "This account is temporarily locked after failed sign-in attempts.",
+                )
+            failed_attempts = 0
+            con.execute("""
+                UPDATE auth_users
+                SET failed_attempts = 0, locked_until = NULL
+                WHERE id = ?
+            """, (row["id"],))
+            con.commit()
 
         stored_hash = row["password_hash"] if row else DUMMY_PASSWORD_HASH
         verified = False
@@ -366,7 +399,7 @@ def login(req: AuthLogin, response: Response):
 
         if not row or not row["is_active"] or not verified:
             if row:
-                attempts = int(row["failed_attempts"]) + 1
+                attempts = failed_attempts + 1
                 locked_until = (
                     (now() + timedelta(minutes=15)).isoformat()
                     if attempts >= 5 else None
