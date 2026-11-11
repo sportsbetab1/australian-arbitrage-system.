@@ -145,6 +145,7 @@ a{color:var(--deep-teal)}
 </div>
 <div class="section">Open sets</div><div class="card" id="sets">Loading…</div>
 <div class="section">Recent opportunities</div><div class="card" id="opps">Loading…</div>
+<div class="section">Notifications</div><div class="card" id="notifications" aria-live="polite">Loading notifications…</div>
 <div class="section">Performance and reports</div>
 <div class="card"><div id="reportSummary" class="muted">Loading report summary…</div><a href="/api/reports/settlements.csv">Download settlement CSV</a></div>
 <div class="warn">Important: the scanner is a decision-support tool, not a guarantee. Verify identical markets, all outcomes, current odds, account limits and settlement rules. A recorded set does not place bets.</div>
@@ -190,6 +191,20 @@ function renderLegs(){
  }
 }
 function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+function renderNotifications(data){
+ const items=data.items||[];
+ const target=document.getElementById('notifications');
+ target.innerHTML='<b>'+Number(data.unread_count||0)+' unread</b>'+(
+  items.map(function(item){
+   return '<div class="item"><div class="row"><b>'+escapeHtml(item.title)+'</b><small>'+escapeHtml(item.created_at)+'</small></div><div>'+escapeHtml(item.message)+'</div>'+
+    (item.read_at?'':'<button class="secondary" type="button" onclick="markNotificationRead('+Number(item.id)+')">Mark read</button>')+'</div>';
+  }).join('')||'<small>No notifications yet.</small>'
+ )
+}
+async function markNotificationRead(id){
+ try{await api('/notifications/'+Number(id)+'/read',{method:'POST',body:'{}'});await refresh()}
+ catch(e){document.getElementById('notifications').textContent=e.message}
+}
 function renderReports(report){
  const p=report.positions||{};
  document.getElementById('reportSummary').textContent=
@@ -289,9 +304,9 @@ async function startDashboard(){
 }
 async function refresh(){
  try{
-  const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts'),api('/reports/summary')]);
-  const d=results[1],p=results[2],o=results[3],accountRows=results[4],report=results[5];
-  renderAccounts(accountRows);renderReports(report);
+  const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts'),api('/reports/summary'),api('/notifications')]);
+  const d=results[1],p=results[2],o=results[3],accountRows=results[4],report=results[5],notificationData=results[6];
+  renderAccounts(accountRows);renderReports(report);renderNotifications(notificationData);
   document.getElementById('status').textContent='API online';
   document.getElementById('bankroll').textContent='$'+Number(d.starting_bankroll).toLocaleString();
   document.getElementById('exposure').textContent='$'+Number(d.open_exposure).toLocaleString();
