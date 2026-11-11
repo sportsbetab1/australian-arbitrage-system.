@@ -499,11 +499,41 @@ function showHedgeForm(positionId){
  if(!position||!target)return;
  let outcomes=[];try{outcomes=JSON.parse(position.possible_outcomes_json||'[]')}catch(e){}
  const accounts=accountsCache.filter(function(a){return a.status==='active'});
+ const currency=String.fromCharCode(36);
  target.innerHTML='<p class="muted">Place the hedge yourself first. Choose an outcome and account, then confirm bookmaker acceptance.</p>'+
   '<label>Hedge outcome</label><select id="hedge-outcome-'+positionId+'">'+outcomes.map(function(o){return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'}).join('')+'</select>'+
-  '<label>Bookmaker account</label><select id="hedge-account-'+positionId+'">'+accounts.map(function(a){return '<option value="'+Number(a.id)+'">'+escapeHtml(a.owner)+' — '+escapeHtml(a.bookmaker)+' (
- const actual=prompt('Enter the total return received from the bookmaker in AUD for this leg (include returned stake; enter 0 if lost):');if(actual===null)return;
- try{await api('/positions/'+positionId+'/legs/'+legId+'/settle',{method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:'Settled manually'})});refresh()}catch(e){alert(e.message)}
+  '<label>Bookmaker account</label><select id="hedge-account-'+positionId+'">'+accounts.map(function(a){return '<option value="'+Number(a.id)+'">'+escapeHtml(a.owner)+' — '+escapeHtml(a.bookmaker)+' (AUD '+Number(a.balance).toFixed(2)+')</option>'}).join('')+'</select>'+
+  '<label>Accepted decimal odds</label><input id="hedge-odds-'+positionId+'" type="number" min="1.01" step="0.01" inputmode="decimal">'+
+  '<label>Accepted stake (AUD)</label><input id="hedge-stake-'+positionId+'" type="number" min="0.01" step="0.01" inputmode="decimal">'+
+  '<button type="button" onclick="recordHedge('+Number(positionId)+')">Confirm accepted hedge</button>';
+ target.classList.remove('hidden')
+}
+async function recordHedge(positionId){
+ const accountId=Number(document.getElementById('hedge-account-'+positionId).value);
+ const outcomeId=document.getElementById('hedge-outcome-'+positionId).value;
+ if(!confirm('Have you personally placed this hedge and verified bookmaker acceptance at these odds and stake?'))return;
+ const payload={
+  account_id:accountId,outcome_id:outcomeId,selection:outcomeId,
+  odds:Number(document.getElementById('hedge-odds-'+positionId).value),
+  stake:Number(document.getElementById('hedge-stake-'+positionId).value),
+  manual_confirmation:true,manually_accepted:true,
+  notes:'Hedge manually placed and acceptance confirmed by '+(currentUser?currentUser.display_name:'signed-in user')
+ };
+ try{
+  const result=await api('/positions/'+Number(positionId)+'/hedge',{method:'POST',body:JSON.stringify(payload)});
+  alert(result.message+' Worst-case return improved from AUD '+Number(result.worst_case_profit_before).toFixed(2)+' to AUD '+Number(result.worst_case_profit_after).toFixed(2)+'.');
+  await refresh()
+ }catch(e){alert(e.message)}
+}
+async function settle(positionId,legId){
+ const actual=prompt('Enter the total return received from the bookmaker in AUD for this leg (include returned stake; enter 0 if lost):');
+ if(actual===null)return;
+ try{
+  await api('/positions/'+positionId+'/legs/'+legId+'/settle',{
+   method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:'Settled manually'})
+  });
+  await refresh()
+ }catch(e){alert(e.message)}
 }
 async function enablePush(){
  try{
