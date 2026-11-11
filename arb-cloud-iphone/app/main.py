@@ -1294,6 +1294,12 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
         )
 
     status = "Unmatched" if allow_unmatched else "Open"
+    send_push({
+        "title": notification_title,
+        "body": notification_message,
+        "position_id": position_id,
+        "event_type": notification_type,
+    })
     return {
         "ok": True,
         "position_id": position_id,
@@ -1785,6 +1791,12 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
             f"{position['event']}: net P/L {pnl:.2f}.",
         )
 
+    send_push({
+        "title": "Position settled",
+        "body": f"{position['event']}: net P/L {pnl:.2f}.",
+        "position_id": position_id,
+        "event_type": "position_settled",
+    })
     return {
         "ok": True,
         "position_status": "Settled",
