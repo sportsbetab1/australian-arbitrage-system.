@@ -182,13 +182,46 @@ function renderLegs(){
 }
 function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
 function renderReports(report){
- const p=report.positions;
+ const p=report.positions||{};
  document.getElementById('reportSummary').textContent=
-  'Settled: '+Number(p.settled_positions||0)+' • Net realised P/L: 
+  'Settled: '+Number(p.settled_positions||0)+' • Net realised P/L: $'+Number(p.net_realised_pnl||0).toFixed(2)+
+  ' • Commission: $'+Number(report.commission_paid||0).toFixed(2)+
+  ' • Reinvested: $'+Number(report.reinvested||0).toFixed(2)+
+  ' • Withdrawn: $'+Number(report.withdrawn||0).toFixed(2);
+}
+function renderAccounts(rows){
  const target=document.getElementById('accountBalances');
  target.innerHTML=rows.map(function(a){
   const id=Number(a.id),owner=escapeHtml(a.owner),bookmaker=escapeHtml(a.bookmaker),balance=Number(a.balance).toFixed(2);
-  return '<div class="item"><b>'+owner+' — '+bookmaker+'</b><div class="row"><span>Recorded balance</span><b>return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'outcome'}
+  return '<div class="item"><b>'+owner+' — '+bookmaker+'</b><div class="row"><span>Recorded balance</span><b>$'+balance+'</b></div>'+
+   '<button class="secondary" onclick="setOpeningBalance('+id+')">Set starting balance</button> '+
+   '<button class="secondary" onclick="recordAccountTransaction('+id+&quot;,'deposit'&quot;+')">Add funds</button> '+
+   '<button class="secondary" onclick="recordAccountTransaction('+id+&quot;,'withdrawal'&quot;+')">Record withdrawal</button></div>';
+ }).join('')||'<small>No bookmaker accounts configured.</small>';
+}
+async function setOpeningBalance(accountId){
+ const value=prompt('Enter the current available AUD balance. This can only be set before ledger activity.');
+ if(value===null)return;
+ const amount=Number(value);
+ if(!Number.isFinite(amount)||amount<0){alert('Enter a valid non-negative amount.');return}
+ try{
+  await api('/accounts/'+accountId+'/opening-balance',{method:'POST',body:JSON.stringify({amount:amount})});
+  await refresh();
+ }catch(e){alert(e.message)}
+}
+async function recordAccountTransaction(accountId,transactionType){
+ const value=prompt('Enter the AUD amount to '+transactionType+' for this bookmaker account.');
+ if(value===null)return;
+ const amount=Number(value);
+ if(!Number.isFinite(amount)||amount<=0){alert('Enter an amount greater than zero.');return}
+ const description=prompt('Add a short note for this ledger entry:','Manually recorded '+transactionType);
+ if(description===null)return;
+ try{
+  await api('/accounts/'+accountId+'/transactions',{method:'POST',body:JSON.stringify({transaction_type:transactionType,amount:amount,description:description})});
+  await refresh();
+ }catch(e){alert(e.message)}
+}
+function slug(value){return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'outcome'}
 async function api(path,opts={}){
  const headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
  const r=await fetch('/api'+path,Object.assign({credentials:'same-origin',headers:headers},opts));
