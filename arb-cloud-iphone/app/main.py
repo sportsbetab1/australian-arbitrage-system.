@@ -786,6 +786,7 @@ def accounts():
 @app.post("/api/accounts/{account_id}/opening-balance")
 def set_opening_balance(account_id: int, req: OpeningBalance, request: Request):
     with db() as con:
+        con.execute("BEGIN IMMEDIATE")
         account = con.execute(
             "SELECT id, opening_balance FROM accounts WHERE id = ?",
             (account_id,),
