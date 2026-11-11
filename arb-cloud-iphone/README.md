@@ -30,11 +30,13 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 
 - No live odds API is integrated. `/api/scan` calculates from submitted candidate odds.
 - No automated bookmaker bet placement or bookmaker-account connection exists.
-- Account opening balances are not live balances. Per-account deposits, withdrawals, and bet-level reconciliation are incomplete.
+- Bookmaker balances are entered and tracked manually. Opening balances, deposits, withdrawals, accepted stakes, and settlement returns are journaled; they are not synced with bookmakers and need reconciliation against statements.
 - Position tracking is binary only. The candidate calculator may calculate other outcome counts, but the assisted position workflow does not support them.
 - Betfair commission is hard-coded by bookmaker name and approximated; verify the actual commission and market rules manually.
 - Email and push helper code exists, but delivery is not yet connected to position/settlement events. Push subscriptions are not yet separated by user.
-- Automated database backups, restore drills, password recovery, monitoring, and production readiness work remain outstanding.
+- Settlement summary and CSV export are available in the authenticated dashboard.
+- Backup and restore scripts create integrity-checked SQLite snapshots and keep a pre-restore safety copy. They are manual and on the same storage volume by default; off-site storage, automated scheduling, and restore drills remain outstanding.
+- Password recovery, monitoring, and production readiness work remain outstanding.
 - Do not deploy this branch for real-money use. It is under development and no deployment is performed by the repository checks.
 
 ## Development
@@ -56,7 +58,7 @@ Run the isolated test suite from this directory:
 pytest -q
 ```
 
-GitHub Actions runs compilation and the test suite on pull-request and development-branch updates. The workflow contains no deploy step.
+GitHub Actions runs Python compilation, the isolated pytest suite, and a JavaScript syntax check on pull-request and development-branch updates. The workflow contains no deploy step.
 
 ## Intended workflow
 
@@ -72,12 +74,12 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 
 ## Recommended next work
 
-1. Make unmatched-leg tracking and recovery the priority: create a position before placement, capture each leg's accepted/rejected/repriced status, and pause new positions while exposure is unmatched.
-2. Finish and regression-test authentication, session expiry/logout, origin protection, and assisted position recording.
-3. Add per-user push subscriptions and an event notification outbox; connect notifications to position/settlement events.
-4. Add controlled account transactions and reconciliation so balances reflect deposits, withdrawals, open bets, and settled returns.
-5. Add exportable reporting, database backup automation, and a tested restore process.
-6. Integrate an authorised odds provider only after its data rights, market coverage, and costs are confirmed.
+1. Finish unmatched-bet recovery: add a way to record an offsetting hedge or cashout, and test repricing / rejected-leg scenarios. Current protection records one accepted leg, reserves exposure, pauses new positions, and tracks its settlement.
+2. Integrate The Odds API behind a manually triggered scanner, keeping the API key in a secret and showing freshness and quota. Confirm available sports, markets, and terms before relying on a feed.
+3. Add per-user push subscriptions and a persistent notification outbox; connect notifications to position/settlement events.
+4. Reconcile manually entered bookmaker balances against statements and add adjustment/audit controls.
+5. Schedule backups to an off-site destination and run a documented restore drill.
+6. Expand security tests for session expiry, logout, lockout, origin checks, authorization boundaries, and recovery.
 7. Complete a security and recovery review before any deployment.
 
 Horse racing is a later phase and needs separate handling for dead heats, deductions, non-runners, starting-price/fixed-odds differences, and place terms.
