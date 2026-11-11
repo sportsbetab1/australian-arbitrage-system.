@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import sqlite3
+import uuid
 
 
 def _integrity_ok(path: Path) -> bool:
@@ -18,7 +19,7 @@ def create_backup(db_path, backup_dir=None, keep=14):
     target_dir = Path(backup_dir).resolve() if backup_dir else source.parent / "backups"
     target_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    target = target_dir / f"arbitrage-{stamp}.sqlite"
+    target = target_dir / f"arbitrage-{stamp}-{uuid.uuid4().hex[:8]}.sqlite"
     temporary = target.with_suffix(".sqlite.tmp")
 
     try:
