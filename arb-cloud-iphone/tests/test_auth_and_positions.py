@@ -204,7 +204,7 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client, monkeypatch
     assert jay_login.status_code == 200
     jay_notifications = client.get("/api/notifications").json()
     assert {item["event_type"] for item in jay_notifications["items"]} == {
-        "position_opened", "position_settled"
+        "position_opened", "position_leg_settled", "position_settled"
     }
     assert client.post(
         f"/api/notifications/{opened_alert['id']}/read",
