@@ -89,6 +89,10 @@ def initialise_system():
         CREATE INDEX IF NOT EXISTS idx_position_legs_position
         ON position_legs(position_id);
 
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_account_transactions_reference
+        ON account_transactions(account_id, transaction_type, reference_id)
+        WHERE reference_id IS NOT NULL;
+
         CREATE INDEX IF NOT EXISTS idx_positions_status
         ON positions(status);
 
@@ -249,6 +253,16 @@ class BufferCommit(BaseModel):
 
 class BufferResolve(BaseModel):
     notes: str = ""
+
+
+class OpeningBalance(BaseModel):
+    amount: float = Field(ge=0)
+
+
+class AccountTransaction(BaseModel):
+    transaction_type: Literal["deposit", "withdrawal"]
+    amount: float = Field(gt=0)
+    description: str = Field(min_length=1, max_length=240)
 
 
 class PushSub(BaseModel):
@@ -564,6 +578,17 @@ def calculate_position_roi(legs, possible_outcomes, commission_by_account):
 # EXPOSURE AND BUFFER CONTROLS
 # ============================================================
 
+def get_account_balance(con, account_id):
+    row = con.execute("""
+        SELECT accounts.opening_balance + COALESCE(SUM(account_transactions.amount), 0) AS balance
+        FROM accounts
+        LEFT JOIN account_transactions ON account_transactions.account_id = accounts.id
+        WHERE accounts.id = ?
+        GROUP BY accounts.id
+    """, (account_id,)).fetchone()
+    return round(float(row["balance"]), 2) if row else None
+
+
 def get_open_exposure(con):
     row = con.execute("""
         SELECT COALESCE(SUM(total_stake), 0) AS exposure
@@ -744,12 +769,90 @@ def config():
 def accounts():
     with db() as con:
         rows = con.execute("""
-            SELECT id, owner, bookmaker, opening_balance, status
+            SELECT
+                accounts.id, accounts.owner, accounts.bookmaker,
+                accounts.opening_balance, accounts.status,
+                ROUND(accounts.opening_balance + COALESCE(SUM(account_transactions.amount), 0), 2) AS balance
             FROM accounts
-            ORDER BY owner, bookmaker
+            LEFT JOIN account_transactions
+                ON account_transactions.account_id = accounts.id
+            GROUP BY accounts.id
+            ORDER BY accounts.owner, accounts.bookmaker
         """).fetchall()
 
     return [dict(row) for row in rows]
+
+
+@app.post("/api/accounts/{account_id}/opening-balance")
+def set_opening_balance(account_id: int, req: OpeningBalance, request: Request):
+    with db() as con:
+        account = con.execute(
+            "SELECT id, opening_balance FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()
+        if not account:
+            raise HTTPException(404, "Bookmaker account not found.")
+        transactions = con.execute(
+            "SELECT COUNT(*) AS total FROM account_transactions WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()["total"]
+        legs = con.execute(
+            "SELECT COUNT(*) AS total FROM position_legs WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()["total"]
+        if transactions or legs or float(account["opening_balance"]) != 0:
+            raise HTTPException(
+                409,
+                "Opening balance can only be set before this account has ledger activity.",
+            )
+        con.execute(
+            "UPDATE accounts SET opening_balance = ? WHERE id = ?",
+            (req.amount, account_id),
+        )
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            ("account_opening_balance_set", json.dumps({
+                "account_id": account_id,
+                "amount": req.amount,
+                "confirmed_by": request.state.auth_user["username"],
+            })),
+        )
+
+    return {"ok": True, "balance": round(req.amount, 2)}
+
+
+@app.post("/api/accounts/{account_id}/transactions")
+def record_account_transaction(account_id: int, req: AccountTransaction, request: Request):
+    with db() as con:
+        con.execute("BEGIN IMMEDIATE")
+        account = con.execute(
+            "SELECT id FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()
+        if not account:
+            raise HTTPException(404, "Bookmaker account not found.")
+        amount = req.amount if req.transaction_type == "deposit" else -req.amount
+        current_balance = get_account_balance(con, account_id)
+        if amount < 0 and current_balance < req.amount:
+            raise HTTPException(409, "Withdrawal exceeds the recorded balance.")
+        con.execute("""
+            INSERT INTO account_transactions (
+                account_id, transaction_type, amount, description
+            )
+            VALUES (?, ?, ?, ?)
+        """, (account_id, req.transaction_type, amount, req.description.strip()))
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            ("account_transaction_recorded", json.dumps({
+                "account_id": account_id,
+                "transaction_type": req.transaction_type,
+                "amount": amount,
+                "confirmed_by": request.state.auth_user["username"],
+            })),
+        )
+        balance = get_account_balance(con, account_id)
+
+    return {"ok": True, "balance": balance}
 
 
 @app.get("/api/dashboard")
@@ -950,6 +1053,16 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
         if any(row["status"] != "active" for row in account_rows):
             raise HTTPException(409, "Both bookmaker accounts must be active.")
 
+        for leg in req.legs:
+            if leg.manually_accepted:
+                available = get_account_balance(con, leg.account_id)
+                if available is None or available < leg.stake:
+                    raise HTTPException(
+                        409,
+                        f"Insufficient recorded balance for account {leg.account_id}; "
+                        "update its opening balance or deposits first.",
+                    )
+
         commission_by_account = {
             row["id"]: 6.0 if row["bookmaker"] == "Betfair" else 0.0
             for row in account_rows
@@ -1009,7 +1122,7 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
         )).lastrowid
 
         for leg in req.legs:
-            con.execute("""
+            leg_id = con.execute("""
                 INSERT INTO position_legs (
                     position_id, account_id, selection,
                     odds, stake, accepted, settled,
@@ -1022,7 +1135,20 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
                 0 if leg.manually_accepted else 1,
                 leg.event_id, leg.market_id, leg.outcome_id,
                 commission_by_account[leg.account_id],
-            ))
+            )).lastrowid
+
+            if leg.manually_accepted:
+                con.execute("""
+                    INSERT INTO account_transactions (
+                        account_id, transaction_type, amount,
+                        description, reference_id
+                    )
+                    VALUES (?, 'stake_debit', ?, ?, ?)
+                """, (
+                    leg.account_id, -leg.stake,
+                    f"Position {position_id} accepted stake",
+                    leg_id,
+                ))
 
         con.execute("""
             INSERT INTO audit_log(action, details)
@@ -1139,6 +1265,19 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
             SET settled = 1, actual_return = ?, commission_paid = ?
             WHERE id = ?
         """, (req.actual_return, commission_paid, leg_id))
+
+        con.execute("""
+            INSERT INTO account_transactions (
+                account_id, transaction_type, amount,
+                description, reference_id
+            )
+            VALUES (?, 'settlement_return', ?, ?, ?)
+        """, (
+            leg["account_id"],
+            round(req.actual_return - commission_paid, 2),
+            f"Position {position_id} settlement return after commission",
+            leg_id,
+        ))
 
         remaining = con.execute("""
             SELECT COUNT(*) AS total
