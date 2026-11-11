@@ -791,23 +791,14 @@ def test_non_finite_financial_inputs_are_rejected(client):
 
     opening = client.post(
         f"/api/accounts/{account_id}/opening-balance",
-        headers=headers,
-        json={"amount": float("inf")},
+        headers={**headers, "Content-Type": "application/json"},
+        content='{"amount": Infinity}',
     )
     assert opening.status_code == 422
 
     scan = client.post(
         "/api/scan",
         headers=headers,
-        json={
-            "sport": "Test",
-            "event": "Non-finite input",
-            "market": "Winner",
-            "outcomes": [
-                {"selection": "A", "bookmaker": "Book A", "odds": float("nan")},
-                {"selection": "B", "bookmaker": "Book B", "odds": 2.0},
-            ],
-            "total_stake": 100,
-        },
+        content='{"sport":"Test","event":"Non-finite input","market":"Winner","outcomes":[{"selection":"A","bookmaker":"Book A","odds":NaN},{"selection":"B","bookmaker":"Book B","odds":2.0}],"total_stake":100}',
     )
     assert scan.status_code == 422
