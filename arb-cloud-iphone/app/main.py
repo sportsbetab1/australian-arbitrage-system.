@@ -889,7 +889,7 @@ def record_unmatched_position(req: OpenPosition, request: Request):
 
 def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool):
     if not req.manual_confirmation:
-        raise HTTPException(400, "Manual confirmation of both bets is required.")
+        raise HTTPException(400, "Manual confirmation is required.")
 
     accepted_count = sum(1 for leg in req.legs if leg.manually_accepted)
     if not allow_unmatched and accepted_count != 2:
@@ -1205,7 +1205,11 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
         "actual_pnl": pnl,
         "total_commission": totals["total_commission"],
         **allocation,
-        "message": "Both legs settled. Position exposure released.",
+        "message": (
+            "Unmatched exposure closed after the accepted leg was settled."
+            if position["status"] == "Unmatched"
+            else "Both legs settled. Position exposure released."
+        ),
     }
 
 
