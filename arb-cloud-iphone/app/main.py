@@ -1,6 +1,8 @@
 import os
 import json
 import uuid
+import csv
+import io
 import smtplib
 import ssl
 import hashlib
@@ -883,11 +885,9 @@ def dashboard():
             SELECT
                 COUNT(*) AS total,
                 COALESCE((
-                    SELECT SUM(realised_profit)
-                    FROM profit_allocations
-                    WHERE position_id IN (
-                        SELECT id FROM positions WHERE status = 'Settled'
-                    )
+                    SELECT SUM(actual_pnl)
+                    FROM positions
+                    WHERE status = 'Settled'
                 ), 0) AS profit
             FROM positions
             WHERE status = 'Settled'
@@ -1202,6 +1202,77 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
 # ============================================================
 # POSITION TRACKING AND SETTLEMENT
 # ============================================================
+
+@app.get("/api/reports/summary")
+def reports_summary():
+    with db() as con:
+        totals = con.execute("""
+            SELECT
+                COUNT(*) AS all_positions,
+                SUM(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) AS open_positions,
+                SUM(CASE WHEN status = 'Unmatched' THEN 1 ELSE 0 END) AS unmatched_positions,
+                SUM(CASE WHEN status = 'Settled' THEN 1 ELSE 0 END) AS settled_positions,
+                COALESCE(SUM(CASE WHEN status = 'Settled' THEN actual_pnl ELSE 0 END), 0) AS net_realised_pnl,
+                COALESCE(SUM(CASE WHEN status IN ('Open', 'Unmatched') THEN total_stake ELSE 0 END), 0) AS committed_exposure
+            FROM positions
+        """).fetchone()
+        commissions = con.execute("""
+            SELECT COALESCE(SUM(commission_paid), 0) AS total
+            FROM position_legs
+        """).fetchone()["total"]
+        allocations = con.execute("""
+            SELECT
+                COALESCE(SUM(reinvested_amount), 0) AS reinvested,
+                COALESCE(SUM(withdrawal_amount), 0) AS withdrawn
+            FROM profit_allocations
+        """).fetchone()
+        months = con.execute("""
+            SELECT substr(settled_at, 1, 7) AS month,
+                   COUNT(*) AS positions,
+                   ROUND(COALESCE(SUM(actual_pnl), 0), 2) AS net_pnl
+            FROM positions
+            WHERE status = 'Settled'
+            GROUP BY substr(settled_at, 1, 7)
+            ORDER BY month DESC
+        """).fetchall()
+
+    return {
+        "positions": dict(totals),
+        "commission_paid": round(float(commissions), 2),
+        "reinvested": round(float(allocations["reinvested"]), 2),
+        "withdrawn": round(float(allocations["withdrawn"]), 2),
+        "monthly": [dict(row) for row in months],
+    }
+
+
+@app.get("/api/reports/settlements.csv")
+def settlements_csv():
+    with db() as con:
+        rows = con.execute("""
+            SELECT p.id, p.settled_at, p.sport, p.event, p.market,
+                   p.total_stake, p.expected_roi, p.actual_pnl,
+                   COALESCE(SUM(l.commission_paid), 0) AS commission_paid
+            FROM positions p
+            LEFT JOIN position_legs l ON l.position_id = p.id
+            WHERE p.status = 'Settled'
+            GROUP BY p.id
+            ORDER BY p.settled_at DESC, p.id DESC
+        """).fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "position_id", "settled_at", "sport", "event", "market",
+        "planned_stake", "expected_roi", "actual_pnl", "commission_paid",
+    ])
+    for row in rows:
+        writer.writerow([row[key] for key in row.keys()])
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="arbitrage-settlements.csv"'},
+    )
+
 
 @app.get("/api/positions")
 def positions():
