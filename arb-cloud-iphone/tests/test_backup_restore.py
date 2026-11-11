@@ -43,3 +43,23 @@ def test_restore_rejects_corrupt_backup_without_replacing_database(tmp_path):
 
     with sqlite3.connect(database) as con:
         assert con.execute("SELECT value FROM sample").fetchone()[0] == "keep"
+
+
+def test_backup_retention_keeps_requested_count_and_rejects_zero(tmp_path):
+    database = tmp_path / "arbitrage.sqlite"
+    backups = tmp_path / "backups"
+    make_db(database, "retention")
+    created = [
+        create_backup(database, backups, keep=2)
+        for _ in range(3)
+    ]
+    assert len(set(created)) == 3
+    assert len(list(backups.glob("arbitrage-*.sqlite"))) == 2
+
+    try:
+        create_backup(database, backups, keep=0)
+    except ValueError as error:
+        assert "At least one backup" in str(error)
+    else:
+        raise AssertionError("A zero-backup retention policy should be rejected.")
+    assert len(list(backups.glob("arbitrage-*.sqlite"))) == 2
