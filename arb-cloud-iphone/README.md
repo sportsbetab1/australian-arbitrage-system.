@@ -33,7 +33,7 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 - Bookmaker balances are entered and tracked manually. Opening balances, deposits, withdrawals, accepted stakes, and settlement returns are journaled; they are not synced with bookmakers and need reconciliation against statements.
 - Position tracking is binary only. The candidate calculator may calculate other outcome counts, but the assisted position workflow does not support them.
 - Betfair commission is hard-coded by bookmaker name and approximated; verify the actual commission and market rules manually.
-- In-app notifications are stored per user for position opened/unmatched and settled events, and each user has independent read state. Push/email delivery is not yet connected to these events; existing push subscriptions are not yet separated by user.
+- In-app notifications are stored per user for position opened/unmatched and settled events, and each user has independent read state. Push subscriptions are now stored per signed-in user and malformed/non-HTTPS endpoints are rejected. Push/email delivery is not yet connected to position events.
 - Settlement summary and CSV export are available in the authenticated dashboard.
 - Backup and restore scripts create integrity-checked SQLite snapshots and keep a pre-restore safety copy. They are manual and on the same storage volume by default; off-site storage, automated scheduling, and restore drills remain outstanding.
 - Password recovery, monitoring, and production readiness work remain outstanding.
