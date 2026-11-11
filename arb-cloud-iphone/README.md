@@ -22,6 +22,14 @@ provider that expressly permits your intended use, obtain credentials, and imple
 documented API adapter. Do not scrape bookmaker pages, bypass access controls, or assume
 that a bookmaker permits arbitrage. This app does not place bets.
 
+## Sign-in and assisted vetting
+
+The dashboard now requires a Hunta or Jay sign-in. Passwords are hashed with Argon2, sessions use an HTTP-only cookie, and five failed logins lock that account for 15 minutes. Sessions last 12 hours.
+
+Before first startup, configure `AUTH_SETUP_TOKEN` to a long random secret in the server environment. On the first dashboard visit, use that one-time token to create both Hunta and Jay passwords (minimum 12 characters). Account setup is disabled after those two accounts exist. Set `AUTH_COOKIE_SECURE=true` behind HTTPS; the example local environment sets it to `false` for plain localhost. The one-time token is not a password-reset mechanism; account recovery currently requires an administrator to update the database.
+
+When a candidate qualifies, **Open assisted vetting** opens an accessible review checklist. It asks you to recheck the event and settlement rules, outcome coverage, current odds, commission, limits, and account balances before manual placement. One signed-in person may complete the full workflow and confirm both legs; a second person is not required. The backend records which signed-in account opened the position. This system does not place bets or independently verify bookmaker acceptance. Position recording currently supports two-outcome markets only.
+
 ## Run locally
 Python 3.11+ recommended.
 
