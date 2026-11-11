@@ -538,12 +538,29 @@ def test_unmatched_position_accepts_only_risk_improving_manual_hedge(client):
     }
     assert balances[("Jay", "Unibet")] == 445
 
-    duplicate = client.post(
+    hedge_payload["stake"] = 10
+    second_hedge = client.post(
         f"/api/positions/{position_id}/hedge",
         headers=headers,
         json=hedge_payload,
     )
-    assert duplicate.status_code == 409
+    assert second_hedge.status_code == 200, second_hedge.text
+    assert second_hedge.json()["worst_case_profit_before"] == -45
+    assert second_hedge.json()["worst_case_profit_after"] == -35
+    assert client.get("/api/dashboard").json()["open_exposure"] == 265
+
+    non_improving = {
+        **hedge_payload,
+        "outcome_id": "home",
+        "selection": "Home",
+        "stake": 20,
+    }
+    rejected_again = client.post(
+        f"/api/positions/{position_id}/hedge",
+        headers=headers,
+        json=non_improving,
+    )
+    assert rejected_again.status_code == 400
 
     position = next(
         item for item in client.get("/api/positions").json()
@@ -561,7 +578,7 @@ def test_unmatched_position_accepts_only_risk_improving_manual_hedge(client):
     final = client.get("/api/positions").json()
     settled_position = next(item for item in final if item["id"] == position_id)
     assert settled_position["status"] == "Settled"
-    assert settled_position["actual_pnl"] == 55
+    assert settled_position["actual_pnl"] == 45
 
 
 def test_five_failed_logins_lock_account_until_timeout(client):
