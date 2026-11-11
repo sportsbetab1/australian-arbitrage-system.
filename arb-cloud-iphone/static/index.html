@@ -194,7 +194,7 @@ async function startDashboard(){
 }
 async function refresh(){
  try{
-  const results=await Promise.all([api('/api/config'),api('/api/dashboard'),api('/api/positions'),api('/api/opportunities')]);
+  const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities')]);
   const c=results[0],d=results[1],p=results[2],o=results[3];
   document.getElementById('status').textContent='API online';
   document.getElementById('bankroll').textContent='$'+Number(d.starting_bankroll).toLocaleString();
