@@ -867,6 +867,13 @@ def test_non_finite_financial_inputs_are_rejected(client):
     )
     assert opening.status_code == 422
 
+    fractional_cent = client.post(
+        f"/api/accounts/{account_id}/opening-balance",
+        headers=headers,
+        json={"amount": 10.001},
+    )
+    assert fractional_cent.status_code == 422
+
     scan = client.post(
         "/api/scan",
         headers=headers,
