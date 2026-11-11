@@ -195,8 +195,8 @@ function renderAccounts(rows){
   const id=Number(a.id),owner=escapeHtml(a.owner),bookmaker=escapeHtml(a.bookmaker),balance=Number(a.balance).toFixed(2);
   return '<div class="item"><b>'+owner+' — '+bookmaker+'</b><div class="row"><span>Recorded balance</span><b>$'+balance+'</b></div>'+
    '<button class="secondary" onclick="setOpeningBalance('+id+')">Set starting balance</button> '+
-   '<button class="secondary" onclick="recordAccountTransaction('+id+&quot;,'deposit'&quot;+')">Add funds</button> '+
-   '<button class="secondary" onclick="recordAccountTransaction('+id+&quot;,'withdrawal'&quot;+')">Record withdrawal</button></div>';
+   '<button class="secondary" onclick="recordAccountTransaction('+id+',&#39;deposit&#39;)">Add funds</button> '+
+   '<button class="secondary" onclick="recordAccountTransaction('+id+',&#39;withdrawal&#39;)">Record withdrawal</button></div>';
  }).join('')||'<small>No bookmaker accounts configured.</small>';
 }
 async function setOpeningBalance(accountId){
