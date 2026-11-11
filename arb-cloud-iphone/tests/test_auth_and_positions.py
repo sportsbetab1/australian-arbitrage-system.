@@ -347,3 +347,58 @@ def test_live_odds_scan_is_manual_and_returns_qualified_candidate(client, monkey
     assert result["candidates"][0]["candidate"]["event"] == "Test Home vs Test Away"
     assert result["quota"]["requests_remaining"] == 99
     assert "manually" in result["candidates"][0]["warning"]
+
+
+def test_logout_revokes_session_and_removes_cookie(client):
+    response = login(client)
+    assert response.status_code == 200
+    assert client.get("/api/accounts").status_code == 200
+
+    logged_out = client.post(
+        "/api/auth/logout",
+        headers={"Origin": "http://testserver"},
+        json={},
+    )
+    assert logged_out.status_code == 200
+    assert client.get("/api/accounts").status_code == 401
+
+
+def test_expired_session_is_rejected_and_revoked(client):
+    response = login(client)
+    assert response.status_code == 200
+    token = response.cookies.get(main.AUTH_COOKIE_NAME)
+    assert token
+
+    con = database.get_db()
+    try:
+        con.execute(
+            "UPDATE auth_sessions SET expires_at = ? WHERE token_hash = ?",
+            ("2000-01-01T00:00:00+00:00", main.token_digest(token)),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    assert client.get("/api/accounts").status_code == 401
+    con = database.get_db()
+    try:
+        remaining = con.execute(
+            "SELECT COUNT(*) AS total FROM auth_sessions WHERE token_hash = ?",
+            (main.token_digest(token),),
+        ).fetchone()["total"]
+        assert remaining == 0
+    finally:
+        con.close()
+
+
+def test_setup_cannot_replace_existing_accounts(client):
+    response = client.post(
+        "/api/auth/setup",
+        headers={"Origin": "http://testserver"},
+        json={
+            "setup_token": SETUP_TOKEN,
+            "hunta_password": "Hunta-another-passphrase-2026",
+            "jay_password": "Jay-another-passphrase-2026",
+        },
+    )
+    assert response.status_code == 409
