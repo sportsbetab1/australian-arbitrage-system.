@@ -802,3 +802,30 @@ def test_non_finite_financial_inputs_are_rejected(client):
         content='{"sport":"Test","event":"Non-finite input","market":"Winner","outcomes":[{"selection":"A","bookmaker":"Book A","odds":NaN},{"selection":"B","bookmaker":"Book B","odds":2.0}],"total_stake":100}',
     )
     assert scan.status_code == 422
+
+
+def test_open_position_cap_is_fifteen_and_is_enforced(client):
+    with database.get_db() as con:
+        for index in range(main.MAX_OPEN_POSITIONS - 1):
+            con.execute(
+                """
+                INSERT INTO positions (event, sport, market, status, total_stake)
+                VALUES (?, 'Test', 'Winner', 'Open', 0.01)
+                """,
+                (f"Cap fixture {index}",),
+            )
+        main.check_new_position_allowed(con, 0.01)
+
+        con.execute(
+            """
+            INSERT INTO positions (event, sport, market, status, total_stake)
+            VALUES ('Cap fixture final', 'Test', 'Winner', 'Open', 0.01)
+            """
+        )
+        with pytest.raises(main.HTTPException) as error:
+            main.check_new_position_allowed(con, 0.01)
+        assert error.value.status_code == 409
+        assert "15" in error.value.detail
+
+    assert client.get("/api/config").json()["concurrent_position_limit"] == 15
+    assert any(row["bookmaker"] == "TAB" for row in client.get("/api/accounts").json())
