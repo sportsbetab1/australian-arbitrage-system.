@@ -695,3 +695,56 @@ def test_reports_include_losses_and_csv_escapes_formula_cells(client):
     assert response.status_code == 200
     assert "'=1+1" in response.text
     assert "'@SUM(A1:A2)" in response.text
+
+
+def test_account_reconciliation_records_signed_audited_adjustment(client):
+    assert login(client).status_code == 200
+    headers = {"Origin": "http://testserver"}
+    con = database.get_db()
+    try:
+        account_id = con.execute(
+            "SELECT id FROM accounts WHERE owner = 'Hunta' AND bookmaker = 'Sportsbet'"
+        ).fetchone()["id"]
+    finally:
+        con.close()
+
+    opened = client.post(
+        f"/api/accounts/{account_id}/opening-balance",
+        headers=headers,
+        json={"amount": 100},
+    )
+    assert opened.status_code == 200
+    adjusted = client.post(
+        f"/api/accounts/{account_id}/reconcile",
+        headers=headers,
+        json={"actual_balance": 82.5, "reason": "Checked bookmaker statement"},
+    )
+    assert adjusted.status_code == 200
+    assert adjusted.json()["adjustment"] == -17.5
+    assert adjusted.json()["balance"] == 82.5
+
+    same = client.post(
+        f"/api/accounts/{account_id}/reconcile",
+        headers=headers,
+        json={"actual_balance": 82.5, "reason": "Repeated balance check"},
+    )
+    assert same.status_code == 200
+    assert same.json()["adjustment"] == 0
+
+    con = database.get_db()
+    try:
+        entry = con.execute(
+            """
+            SELECT amount, description FROM account_transactions
+            WHERE account_id = ? AND transaction_type = 'reconciliation_adjustment'
+            """,
+            (account_id,),
+        ).fetchall()
+        audit_count = con.execute(
+            "SELECT COUNT(*) AS total FROM audit_log WHERE action = 'account_balance_reconciled'"
+        ).fetchone()["total"]
+    finally:
+        con.close()
+    assert len(entry) == 1
+    assert entry[0]["amount"] == -17.5
+    assert audit_count == 1
