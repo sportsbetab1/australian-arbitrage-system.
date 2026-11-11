@@ -221,7 +221,8 @@ function renderAccounts(rows){
   return '<div class="item"><b>'+owner+' — '+bookmaker+'</b><div class="row"><span>Recorded balance</span><b>$'+balance+'</b></div>'+
    '<button class="secondary" onclick="setOpeningBalance('+id+')">Set starting balance</button> '+
    '<button class="secondary" onclick="recordAccountTransaction('+id+',&#39;deposit&#39;)">Add funds</button> '+
-   '<button class="secondary" onclick="recordAccountTransaction('+id+',&#39;withdrawal&#39;)">Record withdrawal</button></div>';
+   '<button class="secondary" onclick="recordAccountTransaction('+id+',&#39;withdrawal&#39;)">Record withdrawal</button> '+
+   '<button class="secondary" onclick="reconcileAccount('+id+')">Reconcile balance</button></div>';
  }).join('')||'<small>No bookmaker accounts configured.</small>';
 }
 async function setOpeningBalance(accountId){
@@ -232,6 +233,23 @@ async function setOpeningBalance(accountId){
  try{
   await api('/accounts/'+accountId+'/opening-balance',{method:'POST',body:JSON.stringify({amount:amount})});
   await refresh();
+ }catch(e){alert(e.message)}
+}
+async function reconcileAccount(id){
+ const current=accountsCache.find(function(a){return Number(a.id)===Number(id)});
+ const actual=prompt('Enter the current bookmaker balance in AUD'+(current?' (recorded: '+Number(current.balance).toFixed(2)+')':'')+':');
+ if(actual===null)return;
+ const amount=Number(actual);
+ if(!Number.isFinite(amount)||amount<0){alert('Enter a valid non-negative balance.');return}
+ const reason=prompt('Briefly explain this reconciliation (for example, statement checked):');
+ if(reason===null||!reason.trim())return;
+ try{
+  const result=await api('/accounts/'+Number(id)+'/reconcile',{
+   method:'POST',
+   body:JSON.stringify({actual_balance:amount,reason:reason.trim()})
+  });
+  alert(result.message+' Current recorded balance: AUD '+Number(result.balance).toFixed(2)+'.');
+  await refresh()
  }catch(e){alert(e.message)}
 }
 async function recordAccountTransaction(accountId,transactionType){
