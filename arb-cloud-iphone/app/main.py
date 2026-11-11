@@ -8,9 +8,11 @@ import smtplib
 import ssl
 import hashlib
 import hmac
+import ipaddress
 import secrets
 from email.message import EmailMessage
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlsplit
 from typing import List, Literal
 
 from argon2 import PasswordHasher
@@ -1976,7 +1978,7 @@ def send_email(subject, body):
     return True
 
 
-def send_push(payload):
+def send_push(payload, user_id=None):
     try:
         from pywebpush import webpush
 
@@ -1991,10 +1993,15 @@ def send_push(payload):
             return 0
 
         with db() as con:
-            rows = con.execute("""
-                SELECT subscription_json
-                FROM push_subscriptions
-            """).fetchall()
+            if user_id is None:
+                rows = con.execute(
+                    "SELECT subscription_json FROM push_subscriptions WHERE user_id IS NOT NULL"
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    "SELECT subscription_json FROM push_subscriptions WHERE user_id = ?",
+                    (user_id,),
+                ).fetchall()
 
         sent = 0
 
@@ -2017,13 +2024,41 @@ def send_push(payload):
 
 
 @app.post("/api/push/subscribe")
-def subscribe(req: PushSub):
+def subscribe(req: PushSub, request: Request):
+    endpoint = req.subscription.get("endpoint")
+    keys = req.subscription.get("keys")
+    parsed = urlsplit(endpoint) if isinstance(endpoint, str) else None
+    if (
+        parsed is None
+        or parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or not isinstance(keys, dict)
+        or not keys.get("p256dh")
+        or not keys.get("auth")
+    ):
+        raise HTTPException(400, "A valid HTTPS push subscription is required.")
+
+    host = parsed.hostname.lower().rstrip(".")
+    if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+        raise HTTPException(400, "The push subscription host is not allowed.")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address is not None and not address.is_global:
+        raise HTTPException(400, "The push subscription host is not allowed.")
+
+    subscription_json = json.dumps(req.subscription, separators=(",", ":"), sort_keys=True)
+    user_id = request.state.auth_user["id"]
     with db() as con:
         con.execute("""
-            INSERT OR IGNORE INTO push_subscriptions
-            (subscription_json)
-            VALUES (?)
-        """, (json.dumps(req.subscription),))
+            INSERT INTO push_subscriptions (user_id, subscription_json)
+            VALUES (?, ?)
+            ON CONFLICT(subscription_json)
+            DO UPDATE SET user_id = excluded.user_id
+        """, (user_id, subscription_json))
 
     return {"ok": True}
 
