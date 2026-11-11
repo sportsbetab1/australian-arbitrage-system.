@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
@@ -239,8 +239,29 @@ async def require_authenticated_api(request: Request, call_next):
     return await call_next(request)
 
 
+MONEY_INPUT_FIELDS = {
+    "total_stake",
+    "stake",
+    "actual_return",
+    "amount",
+    "actual_balance",
+}
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def monetary_values_use_cents(cls, value, info):
+        if (
+            info.field_name in MONEY_INPUT_FIELDS
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and abs(float(value) - round(float(value), 2)) > 1e-8
+        ):
+            raise ValueError("Money amounts must be entered to two decimal places.")
+        return value
 
 
 class Outcome(StrictModel):
