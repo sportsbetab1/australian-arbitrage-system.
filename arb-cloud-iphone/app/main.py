@@ -1272,6 +1272,14 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
             }),
         ))
 
+        notification_type = "position_unmatched" if allow_unmatched else "position_opened"
+        notification_title = "Unmatched leg recorded" if allow_unmatched else "Position recorded"
+        notification_message = f"{req.event}: {accepted_count} bookmaker leg(s) accepted. Review the dashboard for status."
+        create_user_notifications(
+            con, notification_type, position_id,
+            notification_title, notification_message,
+        )
+
     status = "Unmatched" if allow_unmatched else "Open"
     return {
         "ok": True,
@@ -1287,6 +1295,68 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
             "No bookmaker bets were placed by this application."
         ),
     }
+
+
+
+def create_user_notifications(con, event_type, position_id, title, message):
+    users = con.execute(
+        "SELECT id FROM auth_users WHERE is_active = 1"
+    ).fetchall()
+    con.executemany(
+        """
+        INSERT INTO user_notifications (
+            user_id, event_type, position_id, title, message
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            (user["id"], event_type, position_id, title, message)
+            for user in users
+        ],
+    )
+
+
+@app.get("/api/notifications")
+def list_notifications(request: Request):
+    user_id = request.state.auth_user["id"]
+    with db() as con:
+        rows = con.execute(
+            """
+            SELECT id, event_type, position_id, title, message, created_at, read_at
+            FROM user_notifications
+            WHERE user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 50
+            """,
+            (user_id,),
+        ).fetchall()
+        unread = con.execute(
+            "SELECT COUNT(*) AS total FROM user_notifications WHERE user_id = ? AND read_at IS NULL",
+            (user_id,),
+        ).fetchone()["total"]
+    return {"items": [dict(row) for row in rows], "unread_count": unread}
+
+
+@app.post("/api/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: int, request: Request):
+    user_id = request.state.auth_user["id"]
+    with db() as con:
+        cursor = con.execute(
+            """
+            UPDATE user_notifications
+            SET read_at = ?
+            WHERE id = ? AND user_id = ? AND read_at IS NULL
+            """,
+            (now_text(), notification_id, user_id),
+        )
+        if cursor.rowcount == 0:
+            exists = con.execute(
+                "SELECT 1 FROM user_notifications WHERE id = ? AND user_id = ?",
+                (notification_id, user_id),
+            ).fetchone()
+            if not exists:
+                raise HTTPException(404, "Notification not found.")
+    return {"ok": True}
+
 
 
 # ============================================================
@@ -1510,6 +1580,14 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg):
                 "allocation": allocation,
             }),
         ))
+
+        create_user_notifications(
+            con,
+            "position_settled",
+            position_id,
+            "Position settled",
+            f"{position['event']}: net P/L {pnl:.2f}.",
+        )
 
     return {
         "ok": True,
