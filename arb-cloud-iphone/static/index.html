@@ -19,9 +19,52 @@ label{font-size:12px;color:#526578;font-weight:650}.section{font-weight:750;marg
 .row{display:flex;justify-content:space-between;gap:10px;align-items:center}.pill{background:#e4f3e7;color:#24653a;padding:5px 8px;border-radius:20px;font-size:11px}
 .item{border-top:1px solid #edf0f3;padding:11px 0;font-size:13px}.warn{background:#fff5dd;padding:11px;border-radius:10px;font-size:12px;color:#775a12}
 small{font-size:11px;color:#728294}.hidden{display:none}
+
+.auth-gate{position:fixed;inset:0;z-index:1000;background:#eef3f7;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-gate.hidden{display:none}
+.auth-panel{width:min(100%,460px);margin:0}
+.auth-panel h2{margin-top:0}
+#authControls{margin-top:12px;justify-content:flex-end}
+#authControls button{padding:8px 10px}
+.vetting-card{border:2px solid #c7d9e8}
+.vetting-card button{white-space:nowrap}
+.vetting-dock{position:fixed;z-index:20;left:14px;right:14px;bottom:max(12px,env(safe-area-inset-bottom));padding:10px;background:#10263d;border-radius:14px;box-shadow:0 5px 24px #10263d55}
+.vetting-dock.hidden{display:none}
+.vetting-dock button{width:100%;background:#24a16b}
+dialog{border:0;border-radius:18px;padding:0;width:min(760px,calc(100% - 24px));max-height:90vh;box-shadow:0 16px 60px #10263d55;color:#15283b}
+dialog::backdrop{background:#0b1b2b99}
+.dialog-body{padding:18px;overflow:auto;max-height:90vh}
+.dialog-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.dialog-head h2{margin:0 0 8px;font-size:20px}
+.dialog-close{padding:8px 11px}
+.check-row{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-top:1px solid #edf0f3;line-height:1.4}
+.check-row input{width:auto;margin:2px 0 0;flex:none}
+.auth-form{margin-top:14px}
+.auth-form button{width:100%;margin-top:6px}
+#vettingLegAccounts .item,#manualLegChecks .item{background:#f7fafc;border-radius:10px;padding:12px;margin:9px 0;border:1px solid #e4ebf1}
+.result-message{padding:10px;margin-top:10px;border-radius:8px;background:#eef4f8}
+@media(min-width:720px){.vetting-dock{left:auto;right:24px;width:320px}}
 </style></head>
 <body>
-<header><div class="row"><div><h1>Arbitrage Control</h1><div class="white">Cloud scanner • iPhone dashboard</div></div><span class="pill">MANUAL BETTING</span></div></header>
+<header><div class="row"><div><h1>Arbitrage Control</h1><div class="white">Cloud scanner • iPhone dashboard</div></div><span class="pill">MANUAL BETTING</span></div><div id="authControls" class="row hidden"><span>Signed in as <b id="userName"></b></span><button class="secondary" type="button" onclick="logout()">Sign out</button></div></header>
+<div class="auth-gate hidden" id="authGate">
+ <div class="card auth-panel">
+  <h2 id="authTitle">Sign in</h2>
+  <p class="muted" id="authIntro">Use your Hunta or Jay account to access the dashboard.</p>
+  <form id="loginForm" class="auth-form">
+   <label for="loginUsername">Account</label><select id="loginUsername"><option value="hunta">Hunta</option><option value="jay">Jay</option></select>
+   <label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" required>
+   <button type="submit">Sign in</button>
+  </form>
+  <form id="setupForm" class="auth-form hidden">
+   <label for="setupToken">One-time setup token</label><input id="setupToken" type="password" autocomplete="off" required>
+   <label for="setupHuntaPassword">Hunta password (12 characters minimum)</label><input id="setupHuntaPassword" type="password" autocomplete="new-password" minlength="12" required>
+   <label for="setupJayPassword">Jay password (12 characters minimum)</label><input id="setupJayPassword" type="password" autocomplete="new-password" minlength="12" required>
+   <button type="submit">Create both accounts</button>
+  </form>
+  <p id="authMessage" class="warn hidden" role="status" aria-live="polite"></p>
+ </div>
+</div>
 <div class="grid">
  <div class="card"><div class="label">Starting bankroll</div><div class="metric" id="bankroll">$10,000</div></div>
  <div class="card"><div class="label">Open exposure</div><div class="metric" id="exposure">$0</div></div>
@@ -32,6 +75,12 @@ small{font-size:11px;color:#728294}.hidden{display:none}
  <div class="row"><b>Scanner status</b><span class="pill" id="status">Connecting</span></div>
  <p class="muted">Minimum net theoretical ROI: 1.5% • $500 combined stake per set. This starter build receives candidate odds through its API; it is not yet connected to a live odds provider.</p>
  <button class="secondary" onclick="enablePush()">Enable iPhone push notifications</button>
+</div>
+<div class="card vetting-card">
+ <div class="row">
+  <div><b>Assisted vetting</b><div class="muted" id="vettingStatus" aria-live="polite">Run a qualifying scan to open the review checklist.</div></div>
+  <button class="secondary" id="openVettingButton" type="button" disabled onclick="openVetting()">Open assisted vetting</button>
+ </div>
 </div>
 <div class="section">Test an opportunity</div>
 <div class="card">
@@ -46,46 +95,226 @@ small{font-size:11px;color:#728294}.hidden{display:none}
 <div class="section">Open sets</div><div class="card" id="sets">Loading…</div>
 <div class="section">Recent opportunities</div><div class="card" id="opps">Loading…</div>
 <div class="warn">Important: the scanner is a decision-support tool, not a guarantee. Verify identical markets, all outcomes, current odds, account limits and settlement rules. A recorded set does not place bets.</div>
+<div class="vetting-dock hidden" id="vettingDock"><button type="button" onclick="openVetting()">Open assisted vetting</button></div>
+<dialog id="vettingDialog" aria-labelledby="vettingTitle">
+ <div class="dialog-body">
+  <div class="dialog-head"><div><h2 id="vettingTitle">Assisted vetting</h2><div class="muted">Review the candidate, then place each bet yourself at the bookmaker.</div></div><button class="secondary dialog-close" type="button" onclick="closeVetting()">Close</button></div>
+  <div class="result-message" id="vettingCandidateSummary"></div>
+  <div id="vettingReviewStage">
+   <div class="section">Before placing anything</div>
+   <label class="check-row"><input type="checkbox" class="vetting-check">The event, market, start time and settlement terms match at both bookmakers.</label>
+   <label class="check-row"><input type="checkbox" class="vetting-check">Every possible outcome is covered exactly once, with no duplicate or missing selection.</label>
+   <label class="check-row"><input type="checkbox" class="vetting-check">The displayed odds are current, available to my accounts and still accepted by each bookmaker.</label>
+   <label class="check-row"><input type="checkbox" class="vetting-check">Stake limits, available balance, commission and account restrictions have been checked.</label>
+   <label class="check-row"><input type="checkbox" class="vetting-check">I understand the calculated return is theoretical and can change if a price moves or a leg is rejected.</label>
+   <div class="section">Bookmaker accounts</div>
+   <p class="muted">Choose which Hunta and Jay bookmaker accounts this position will use. Either signed-in person may review and manually place both legs.</p>
+   <div id="vettingLegAccounts"></div>
+   <p class="warn hidden" id="vettingUnsupported"></p>
+   <button id="beginPlacementButton" type="button" disabled onclick="beginManualPlacement()">Continue to manual placement</button>
+  </div>
+  <div id="manualPlacementStage" class="hidden">
+   <div class="section">Place and confirm each leg</div>
+   <p class="warn">Open each bookmaker yourself and place the displayed stake. This app does not open bookmaker sites or place bets.</p>
+   <div id="manualLegChecks"></div>
+   <label class="check-row"><input id="allPlaced" type="checkbox">I have personally verified that both bets were accepted at the displayed odds and stakes.</label>
+   <p id="vettingMessage" class="result-message hidden" role="status" aria-live="polite"></p>
+   <button id="recordPositionButton" type="button" disabled onclick="recordPosition()">Record manually placed position</button>
+  </div>
+ </div>
+</dialog>
 <script>
-let legCount=2, lastOpportunity=null;
+let legCount=2, lastOpportunity=null, lastCandidate=null, currentUser=null, accountsCache=[], selectedLegAccounts=[], refreshTimer=null;
 function addLeg(){if(legCount>=3)return;legCount++;renderLegs()}
 function renderLegs(){
  const el=document.getElementById('legs');el.innerHTML='';
  for(let i=1;i<=legCount;i++){
-  const d=document.createElement('div');d.innerHTML=`<div class="section">Outcome ${i}</div><label>Selection</label><input id="sel${i}" value="${i===1?'Home':i===2?'Away':'Draw'}"><label>Bookmaker</label><input id="book${i}" value="${i===1?'Bookmaker A':i===2?'Bookmaker B':'Bookmaker C'}"><label>Decimal odds</label><input id="odds${i}" type="number" min="1.01" step="0.01" value="${i===1?'2.10':i===2?'2.05':'3.50'}"><label>Commission % (if applicable)</label><input id="comm${i}" type="number" min="0" max="99" step="0.1" value="0">`;el.appendChild(d)
+  const d=document.createElement('div');
+  d.innerHTML='<div class="section">Outcome '+i+'</div><label>Selection</label><input id="sel'+i+'" value="'+(i===1?'Home':i===2?'Away':'Draw')+'"><label>Bookmaker</label><input id="book'+i+'" value="'+(i===1?'Bookmaker A':i===2?'Bookmaker B':'Bookmaker C')+'"><label>Decimal odds</label><input id="odds'+i+'" type="number" min="1.01" step="0.01" value="'+(i===1?'2.10':i===2?'2.05':'3.50')+'"><label>Commission % (if applicable)</label><input id="comm'+i+'" type="number" min="0" max="99" step="0.1" value="0">';
+  el.appendChild(d)
  }
 }
-async function api(path,opts={}){let r=await fetch('/api'+path,{headers:{'Content-Type':'application/json'},...opts});let j=await r.json();if(!r.ok)throw Error(j.detail||'Request failed');return j}
+function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+function slug(value){return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'outcome'}
+async function api(path,opts={}){
+ const headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
+ const r=await fetch('/api'+path,Object.assign({credentials:'same-origin',headers:headers},opts));
+ let j={};try{j=await r.json()}catch(e){j={}}
+ if(!r.ok){if(r.status===401&&path!=='/auth/login'){showAuthGate(false)}throw Error(j.detail||'Request failed')}
+ return j
+}
+function showAuthGate(setup){
+ const gate=document.getElementById('authGate');gate.classList.remove('hidden');
+ document.getElementById('authControls').classList.add('hidden');
+ document.getElementById('authLoginPane');
+ document.getElementById('loginForm').classList.toggle('hidden',!!setup);
+ document.getElementById('setupForm').classList.toggle('hidden',!setup);
+ document.getElementById('authTitle').textContent=setup?'Set up Hunta and Jay accounts':'Sign in';
+ document.getElementById('authIntro').textContent=setup?'Enter the one-time setup token from the server environment, then set both passwords.':'Use your Hunta or Jay account to access the dashboard.';
+}
+function showAuthenticated(){
+ document.getElementById('authGate').classList.add('hidden');
+ document.getElementById('authControls').classList.remove('hidden');
+ document.getElementById('userName').textContent=currentUser.display_name;
+}
+function authError(message){
+ const el=document.getElementById('authMessage');el.textContent=message;el.classList.remove('hidden')
+}
+document.getElementById('loginForm').addEventListener('submit',async function(e){
+ e.preventDefault();const message=document.getElementById('authMessage');message.classList.add('hidden');
+ try{
+  const x=await api('/auth/login',{method:'POST',body:JSON.stringify({username:document.getElementById('loginUsername').value,password:document.getElementById('loginPassword').value})});
+  currentUser=x.user;document.getElementById('loginPassword').value='';showAuthenticated();await startDashboard();
+ }catch(err){authError(err.message)}
+});
+document.getElementById('setupForm').addEventListener('submit',async function(e){
+ e.preventDefault();const message=document.getElementById('authMessage');message.classList.add('hidden');
+ try{
+  await api('/auth/setup',{method:'POST',body:JSON.stringify({setup_token:document.getElementById('setupToken').value,hunta_password:document.getElementById('setupHuntaPassword').value,jay_password:document.getElementById('setupJayPassword').value})});
+  document.getElementById('setupToken').value='';document.getElementById('setupHuntaPassword').value='';document.getElementById('setupJayPassword').value='';
+  showAuthGate(false);authError('Accounts created. Sign in with either account.');
+ }catch(err){authError(err.message)}
+});
+async function logout(){
+ try{await api('/auth/logout',{method:'POST',body:'{}'})}catch(e){}
+ currentUser=null;lastOpportunity=null;lastCandidate=null;showAuthGate(false);updateVettingAvailability();
+}
+async function initialize(){
+ renderLegs();
+ try{
+  const s=await api('/auth/status');
+  if(s.setup_required){showAuthGate(true);return}
+  if(!s.authenticated){showAuthGate(false);return}
+  currentUser=s.user;showAuthenticated();await startDashboard();
+ }catch(e){showAuthGate(false);authError(e.message)}
+}
+async function startDashboard(){
+ await refresh();
+ if(!refreshTimer)refreshTimer=setInterval(refresh,15000)
+}
 async function refresh(){
  try{
-  const c=await api('/config'),s=await api('/sets'),o=await api('/opportunities');
+  const results=await Promise.all([api('/api/config'),api('/api/dashboard'),api('/api/positions'),api('/api/opportunities')]);
+  const c=results[0],d=results[1],p=results[2],o=results[3];
   document.getElementById('status').textContent='API online';
-  document.getElementById('bankroll').textContent='$'+c.bankroll.toLocaleString();
-  document.getElementById('exposure').textContent='$'+s.open_exposure.toLocaleString();
-  document.getElementById('active').textContent=s.open_sets+' / '+c.max_open_sets;
-  document.getElementById('capacity').textContent='$'+s.remaining_exposure.toLocaleString();
-  document.getElementById('sets').innerHTML=s.items.filter(x=>x.status==='Open').map(x=>`<div class="item"><b>${x.sport}: ${x.event}</b><div class="muted">${x.market} • $${x.total_stake} • ${(x.roi*100).toFixed(2)}% theoretical</div><button class="secondary" onclick="settle('${x.id}')">Record settlement</button></div>`).join('')||'<small>No open sets.</small>';
-  document.getElementById('opps').innerHTML=o.map(x=>`<div class="item"><b>${x.sport}: ${x.event}</b><div class="muted">${x.market} • ${(x.roi*100).toFixed(2)}% • ${x.status}</div></div>`).join('')||'<small>No opportunities yet.</small>';
- }catch(e){document.getElementById('status').textContent='API unavailable'}
+  document.getElementById('bankroll').textContent='$'+Number(d.starting_bankroll).toLocaleString();
+  document.getElementById('exposure').textContent='$'+Number(d.open_exposure).toLocaleString();
+  document.getElementById('active').textContent=String(d.open_positions);
+  document.getElementById('capacity').textContent='$'+Number(d.remaining_exposure).toLocaleString();
+  const openPositions=p.filter(function(x){return x.status==='Open'});
+  document.getElementById('sets').innerHTML=openPositions.map(function(x){
+   const legs=(x.legs||[]).map(function(l){return '<div class="item">'+escapeHtml(l.owner)+' • '+escapeHtml(l.selection)+' at '+escapeHtml(l.bookmaker)+' • $'+Number(l.stake).toFixed(2)+' stake <button class="secondary" onclick="settle('+Number(x.id)+','+Number(l.id)+')">Record leg settlement</button></div>'}).join('');
+   return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • $'+Number(x.total_stake).toFixed(2)+' • '+(Number(x.expected_roi)*100).toFixed(2)+'% theoretical</div>'+legs+'</div>'
+  }).join('')||'<small>No open positions.</small>';
+  document.getElementById('opps').innerHTML=o.map(function(x){return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • '+(Number(x.roi)*100).toFixed(2)+'% • '+escapeHtml(x.status)+'</div></div>'}).join('')||'<small>No opportunities yet.</small>';
+ }catch(e){document.getElementById('status').textContent=e.message==='Please sign in to use the arbitrage dashboard.'?'Sign in required':'API unavailable'}
 }
 async function scan(){
  try{
-  const outcomes=[];for(let i=1;i<=legCount;i++)outcomes.push({selection:document.getElementById('sel'+i).value,bookmaker:document.getElementById('book'+i).value,odds:Number(document.getElementById('odds'+i).value),commission_pct:Number(document.getElementById('comm'+i).value)});
-  const x=await api('/scan',{method:'POST',body:JSON.stringify({sport:document.getElementById('sport').value,event:document.getElementById('event').value,market:document.getElementById('market').value,outcomes,total_stake:500})});
-  lastOpportunity=x;
-  let html=`<div class="item"><b>${x.qualified?'Potential arbitrage':'Does not qualify'}</b><div>Net theoretical ROI: ${(x.roi*100).toFixed(2)}%</div><div>Estimated theoretical profit: $${x.profit.toFixed(2)}</div>`;
-  x.stakes.forEach((v,i)=>html+=`<div>${outcomes[i].selection} at ${outcomes[i].bookmaker}: <b>$${v.toFixed(2)}</b></div>`);
-  if(x.qualified)html+=`<button style="margin-top:10px" onclick="openSet('${x.opportunity_id}')">I have manually verified and placed both legs — record $500 set</button>`;
-  html+='</div>';document.getElementById('result').innerHTML=html;refresh();
+  const outcomes=[];for(let i=1;i<=legCount;i++)outcomes.push({selection:document.getElementById('sel'+i).value.trim(),bookmaker:document.getElementById('book'+i).value.trim(),odds:Number(document.getElementById('odds'+i).value),commission_pct:Number(document.getElementById('comm'+i).value)});
+  const candidate={sport:document.getElementById('sport').value,event:document.getElementById('event').value.trim(),market:document.getElementById('market').value.trim(),outcomes:outcomes,total_stake:500};
+  const x=await api('/scan',{method:'POST',body:JSON.stringify(candidate)});
+  lastOpportunity=x;lastCandidate=x.candidate||candidate;
+  let html='<div class="item"><b>'+(x.qualified?'Potential arbitrage':'Does not qualify')+'</b><div>Net theoretical ROI: '+(Number(x.roi)*100).toFixed(2)+'%</div><div>Estimated theoretical profit: $'+Number(x.profit).toFixed(2)+'</div>';
+  x.stakes.forEach(function(v,i){html+='<div>'+escapeHtml(outcomes[i].selection)+' at '+escapeHtml(outcomes[i].bookmaker)+': <b>$'+Number(v).toFixed(2)+'</b></div>'});
+  if(x.qualified)html+='<button style="margin-top:10px" onclick="openVetting()">Open assisted vetting</button>';
+  html+='</div>';document.getElementById('result').innerHTML=html;
+  updateVettingAvailability();await refresh();
  }catch(e){document.getElementById('result').textContent=e.message}
 }
-async function openSet(id){
- if(!confirm('Confirm: have you independently verified and successfully placed BOTH legs? This only records exposure; it does not place bets.'))return;
- try{await api('/sets/open',{method:'POST',body:JSON.stringify({opportunity_id:id,manual_confirmation:true,notes:'User confirmed both legs placed manually.'})});refresh()}catch(e){alert(e.message)}
+function updateVettingAvailability(){
+ const ready=!!(lastOpportunity&&lastOpportunity.qualified&&lastCandidate);
+ const button=document.getElementById('openVettingButton');button.disabled=!ready;
+ document.getElementById('vettingDock').classList.toggle('hidden',!ready);
+ document.getElementById('vettingStatus').textContent=ready?'Qualified candidate ready • '+escapeHtml(lastCandidate.event):'Run a qualifying scan to open the review checklist.'
 }
-async function settle(id){
- const pnl=prompt('Enter actual net profit/loss in AUD (e.g. 8.50 or -500):');if(pnl===null)return;
- try{await api('/sets/'+id+'/settle',{method:'POST',body:JSON.stringify({actual_pnl:Number(pnl),notes:'Settled manually'})});refresh()}catch(e){alert(e.message)}
+function selectedAccountsFromUI(){
+ return Array.from(lastCandidate.outcomes||[]).map(function(_,i){
+  const id=Number(document.getElementById('accountForLeg'+i).value);
+  return accountsCache.find(function(a){return Number(a.id)===id})
+ })
+}
+function updateVettingContinue(){
+ const checks=Array.from(document.querySelectorAll('.vetting-check')).every(function(c){return c.checked});
+ let valid=false;
+ if(lastCandidate&&lastCandidate.outcomes.length===2){
+  const selected=selectedAccountsFromUI();
+  valid=selected.length===2&&selected.every(Boolean)&&selected[0].id!==selected[1].id&&new Set(selected.map(function(a){return a.owner})).size===2
+ }
+ document.getElementById('beginPlacementButton').disabled=!(checks&&valid)
+}
+async function openVetting(){
+ if(!lastOpportunity||!lastOpportunity.qualified||!lastCandidate)return;
+ const dialog=document.getElementById('vettingDialog');
+ document.getElementById('manualPlacementStage').classList.add('hidden');
+ document.getElementById('vettingReviewStage').classList.remove('hidden');
+ document.getElementById('vettingMessage').classList.add('hidden');
+ document.getElementById('beginPlacementButton').disabled=true;
+ document.querySelectorAll('.vetting-check').forEach(function(c){c.checked=false});
+ document.getElementById('allPlaced').checked=false;
+ document.getElementById('vettingCandidateSummary').innerHTML='<b>'+escapeHtml(lastCandidate.sport)+': '+escapeHtml(lastCandidate.event)+'</b><div>'+escapeHtml(lastCandidate.market)+' • '+(Number(lastOpportunity.roi)*100).toFixed(2)+'% theoretical net ROI • $'+Number(lastOpportunity.profit).toFixed(2)+' estimated theoretical profit</div>';
+ const unsupported=document.getElementById('vettingUnsupported'), accountsEl=document.getElementById('vettingLegAccounts');
+ accountsEl.innerHTML='';unsupported.classList.add('hidden');
+ if(lastCandidate.outcomes.length!==2){
+  unsupported.textContent='Position tracking currently supports two-outcome markets only. The opportunity can be reviewed, but it cannot be recorded as an open position yet.';
+  unsupported.classList.remove('hidden')
+ }
+ try{accountsCache=await api('/accounts')}catch(e){accountsCache=[];unsupported.textContent=e.message;unsupported.classList.remove('hidden')}
+ lastCandidate.outcomes.forEach(function(o,i){
+  const options=accountsCache.filter(function(a){return a.status==='active'});
+  const match=options.find(function(a){return a.bookmaker.toLowerCase()===o.bookmaker.toLowerCase()});
+  const htmlOptions=options.map(function(a){return '<option value="'+Number(a.id)+'" '+(match&&Number(match.id)===Number(a.id)?'selected':'')+'>'+escapeHtml(a.owner)+' — '+escapeHtml(a.bookmaker)+'</option>'}).join('');
+  accountsEl.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+' at '+escapeHtml(o.bookmaker)+'</b><div class="muted">Suggested stake: $'+Number(lastOpportunity.stakes[i]).toFixed(2)+' at '+Number(o.odds).toFixed(2)+' odds</div><label for="accountForLeg'+i+'">Bookmaker account</label><select id="accountForLeg'+i+'">'+htmlOptions+'</select></div>'
+ });
+ document.querySelectorAll('.vetting-check').forEach(function(c){c.onchange=updateVettingContinue});
+ accountsEl.querySelectorAll('select').forEach(function(s){s.onchange=updateVettingContinue});
+ if(dialog.showModal)dialog.showModal();else dialog.setAttribute('open','');
+ updateVettingContinue()
+}
+function closeVetting(){const d=document.getElementById('vettingDialog');if(d.close)d.close();else d.removeAttribute('open')}
+function beginManualPlacement(){
+ updateVettingContinue();if(document.getElementById('beginPlacementButton').disabled)return;
+ selectedLegAccounts=selectedAccountsFromUI();
+ const target=document.getElementById('manualLegChecks');target.innerHTML='';
+ lastCandidate.outcomes.forEach(function(o,i){
+  target.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+'</b><div>'+escapeHtml(o.bookmaker)+' • '+Number(o.odds).toFixed(2)+' odds • stake $'+Number(lastOpportunity.stakes[i]).toFixed(2)+'</div><label class="check-row"><input type="checkbox" class="leg-accepted">This leg was placed manually and the bookmaker accepted it.</label></div>'
+ });
+ document.getElementById('vettingReviewStage').classList.add('hidden');
+ document.getElementById('manualPlacementStage').classList.remove('hidden');
+ document.getElementById('recordPositionButton').disabled=true;
+ document.getElementById('allPlaced').onchange=updateRecordPosition;
+ document.querySelectorAll('.leg-accepted').forEach(function(c){c.onchange=updateRecordPosition})
+}
+function updateRecordPosition(){
+ const accepted=Array.from(document.querySelectorAll('.leg-accepted')).length===2&&Array.from(document.querySelectorAll('.leg-accepted')).every(function(c){return c.checked});
+ document.getElementById('recordPositionButton').disabled=!(accepted&&document.getElementById('allPlaced').checked)
+}
+async function recordPosition(){
+ updateRecordPosition();if(document.getElementById('recordPositionButton').disabled)return;
+ const eventId=slug(lastCandidate.event),marketId=slug(lastCandidate.market);
+ const outcomes=lastCandidate.outcomes.map(function(o){return slug(o.selection)});
+ if(new Set(outcomes).size!==2){document.getElementById('vettingMessage').textContent='The two selections need distinct names before they can be recorded.';document.getElementById('vettingMessage').classList.remove('hidden');return}
+ const request={
+  sport:lastCandidate.sport,event:lastCandidate.event,market:lastCandidate.market,
+  event_id:eventId,market_id:marketId,market_type:'binary',
+  possible_outcomes:outcomes,market_rules_verified:true,manual_confirmation:true,
+  notes:'Assisted vetting completed and both legs manually confirmed by '+(currentUser?currentUser.display_name:'signed-in user')+'.',
+  legs:lastCandidate.outcomes.map(function(o,i){
+   return {account_id:Number(selectedLegAccounts[i].id),event_id:eventId,market_id:marketId,outcome_id:outcomes[i],selection:o.selection,odds:Number(o.odds),stake:Number(lastOpportunity.stakes[i]),commission_pct:Number(o.commission_pct||0),manually_accepted:true}
+  })
+ };
+ const button=document.getElementById('recordPositionButton'),message=document.getElementById('vettingMessage');
+ button.disabled=true;message.textContent='Recording the manually placed position…';message.classList.remove('hidden');
+ try{
+  const result=await api('/positions/open',{method:'POST',body:JSON.stringify(request)});
+  message.textContent='Position recorded. '+result.message;
+  lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
+  setTimeout(closeVetting,1400)
+ }catch(e){message.textContent=e.message;button.disabled=false}
+}
+async function settle(positionId,legId){
+ const actual=prompt('Enter the total return received from the bookmaker in AUD for this leg (include returned stake; enter 0 if lost):');if(actual===null)return;
+ try{await api('/positions/'+positionId+'/legs/'+legId+'/settle',{method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:'Settled manually'})});refresh()}catch(e){alert(e.message)}
 }
 async function enablePush(){
  try{
@@ -98,5 +327,5 @@ async function enablePush(){
   await api('/push/subscribe',{method:'POST',body:JSON.stringify({subscription:sub})});alert('Push notifications enabled.');
  }catch(e){alert(e.message)}
 }
-renderLegs();refresh();setInterval(refresh,15000);
+initialize();
 </script></body></html>
