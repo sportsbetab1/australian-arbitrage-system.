@@ -199,7 +199,10 @@ async def require_authenticated_api(request: Request, call_next):
             forwarded_scheme.split(",")[0].strip().lower()
             if forwarded_scheme else request.url.scheme.lower()
         )
-        parsed_origin = urlsplit(origin) if origin else None
+        try:
+            parsed_origin = urlsplit(origin) if origin else None
+        except ValueError:
+            parsed_origin = None
         if (
             parsed_origin is None
             or parsed_origin.scheme.lower() != expected_scheme
