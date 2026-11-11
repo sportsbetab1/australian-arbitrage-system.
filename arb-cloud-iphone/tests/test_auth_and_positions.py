@@ -756,7 +756,12 @@ def test_push_subscriptions_are_user_scoped(client, monkeypatch):
 def test_push_subscription_requires_safe_https_endpoint(client):
     assert login(client).status_code == 200
     headers = {"Origin": "http://testserver"}
-    for endpoint in ("http://push.example.test/sub", "https://localhost/sub", "https://[invalid/sub"):
+    for endpoint in (
+        "http://push.example.test/sub",
+        "https://localhost/sub",
+        "https://[invalid/sub",
+        "https://fcm.googleapis.com/" + ("x" * 4100),
+    ):
         response = client.post(
             "/api/push/subscribe",
             headers=headers,
