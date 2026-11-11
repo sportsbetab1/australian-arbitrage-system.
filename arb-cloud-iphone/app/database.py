@@ -35,6 +35,27 @@ def init_db():
         subscription_json TEXT UNIQUE
     );
 
+    CREATE TABLE IF NOT EXISTS push_delivery_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        subscription_json TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending', 'sending', 'sent', 'dead')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        locked_at TEXT,
+        sent_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_push_delivery_due
+    ON push_delivery_queue(status, next_attempt_at, id);
+
     CREATE TABLE IF NOT EXISTS accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         owner TEXT NOT NULL CHECK(owner IN ('Hunta', 'Jay')),
