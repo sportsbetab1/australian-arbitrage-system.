@@ -556,3 +556,21 @@ def test_unmatched_position_accepts_only_risk_improving_manual_hedge(client):
     settled_position = next(item for item in final if item["id"] == position_id)
     assert settled_position["status"] == "Settled"
     assert settled_position["actual_pnl"] == 55
+
+
+def test_five_failed_logins_lock_account_until_timeout(client):
+    for attempt in range(5):
+        response = login(client, password="incorrect-test-password")
+        assert response.status_code == 401, f"attempt {attempt + 1}: {response.text}"
+
+    locked = login(client)
+    assert locked.status_code == 423
+
+
+def test_session_cookie_is_http_only_same_site_and_time_limited(client):
+    response = login(client)
+    assert response.status_code == 200
+    cookie = response.headers.get("set-cookie", "").lower()
+    assert "httponly" in cookie
+    assert "samesite=strict" in cookie
+    assert "max-age=43200" in cookie
