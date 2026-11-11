@@ -13,6 +13,8 @@ def _integrity_ok(path: Path) -> bool:
 
 
 def create_backup(db_path, backup_dir=None, keep=14):
+    if keep is not None and int(keep) < 1:
+        raise ValueError("At least one backup must be retained.")
     source = Path(db_path).resolve()
     if not source.is_file():
         raise FileNotFoundError(f"Database file not found: {source}")
