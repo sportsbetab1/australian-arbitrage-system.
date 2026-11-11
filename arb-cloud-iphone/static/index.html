@@ -463,7 +463,13 @@ function beginManualPlacement(){
  selectedLegAccounts=selectedAccountsFromUI();
  const target=document.getElementById('manualLegChecks');target.innerHTML='';
  lastCandidate.outcomes.forEach(function(o,i){
-  target.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+'</b><div class="muted">Suggested: '+escapeHtml(o.bookmaker)+' • '+Number(o.odds).toFixed(2)+' odds • stake 
+  target.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+'</b>'+
+   '<div class="muted">Suggested: '+escapeHtml(o.bookmaker)+' &bull; '+Number(o.odds).toFixed(2)+' odds &bull; stake AUD '+Number(lastOpportunity.stakes[i]).toFixed(2)+'</div>'+
+   '<label for="placedOdds'+i+'">Accepted decimal odds</label>'+
+   '<input id="placedOdds'+i+'" class="placed-odds" type="number" min="1.01" step="0.01" value="'+Number(o.odds).toFixed(2)+'">'+
+   '<label for="placedStake'+i+'">Accepted stake (AUD)</label>'+
+   '<input id="placedStake'+i+'" class="placed-stake" type="number" min="0.01" step="0.01" value="'+Number(lastOpportunity.stakes[i]).toFixed(2)+'">'+
+   '<label class="check-row"><input type="checkbox" class="leg-accepted">This leg was placed manually and the bookmaker accepted it.</label></div>'
  });
  document.getElementById('vettingReviewStage').classList.add('hidden');
  document.getElementById('manualPlacementStage').classList.remove('hidden');
