@@ -296,6 +296,11 @@ class AccountTransaction(BaseModel):
 class PushSub(BaseModel):
     subscription: dict
 
+class AccountReconciliation(BaseModel):
+    actual_balance: float = Field(ge=0)
+    reason: str = Field(min_length=1, max_length=240)
+
+
 class AuthSetup(BaseModel):
     setup_token: str = Field(min_length=1)
     hunta_password: str = Field(min_length=12, max_length=256)
@@ -882,6 +887,63 @@ def record_account_transaction(account_id: int, req: AccountTransaction, request
         balance = get_account_balance(con, account_id)
 
     return {"ok": True, "balance": balance}
+
+
+@app.post("/api/accounts/{account_id}/reconcile")
+def reconcile_account_balance(
+    account_id: int,
+    req: AccountReconciliation,
+    request: Request,
+):
+    reason = req.reason.strip()
+    if not reason:
+        raise HTTPException(400, "A reconciliation reason is required.")
+    with db() as con:
+        con.execute("BEGIN IMMEDIATE")
+        account = con.execute(
+            "SELECT id FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()
+        if not account:
+            raise HTTPException(404, "Bookmaker account not found.")
+
+        current_balance = get_account_balance(con, account_id)
+        delta = round(req.actual_balance - current_balance, 2)
+        if abs(delta) >= 0.005:
+            con.execute(
+                """
+                INSERT INTO account_transactions (
+                    account_id, transaction_type, amount, description
+                ) VALUES (?, 'reconciliation_adjustment', ?, ?)
+                """,
+                (account_id, delta, reason),
+            )
+            con.execute(
+                "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+                (
+                    "account_balance_reconciled",
+                    json.dumps({
+                        "account_id": account_id,
+                        "previous_balance": current_balance,
+                        "actual_balance": req.actual_balance,
+                        "adjustment": delta,
+                        "reason": reason,
+                        "recorded_by": request.state.auth_user["username"],
+                    }),
+                ),
+            )
+
+    return {
+        "ok": True,
+        "previous_balance": current_balance,
+        "balance": round(req.actual_balance, 2),
+        "adjustment": delta,
+        "message": (
+            "Balance already matched; no ledger entry was needed."
+            if abs(delta) < 0.005 else
+            "Reconciliation adjustment recorded in the account ledger."
+        ),
+    }
 
 
 @app.get("/api/dashboard")
