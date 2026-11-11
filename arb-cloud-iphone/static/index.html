@@ -148,6 +148,8 @@ a{color:var(--deep-teal)}
 <div class="section">Notifications</div><div class="card" id="notifications" aria-live="polite">Loading notifications…</div>
 <div class="section">Performance and reports</div>
 <div class="card"><div id="reportSummary" class="muted">Loading report summary…</div><a href="/api/reports/settlements.csv">Download settlement CSV</a></div>
+<div class="section">Backups and recovery</div>
+<div class="card"><button class="secondary" type="button" onclick="createBackup()">Create verified backup now</button><div id="backupList" class="muted">Loading backup list…</div><small>Backups are stored on the configured app volume. Schedule off-site copies separately.</small></div>
 <div class="warn">Important: the scanner is a decision-support tool, not a guarantee. Verify identical markets, all outcomes, current odds, account limits and settlement rules. A recorded set does not place bets.</div>
 <div class="vetting-dock hidden" id="vettingDock"><button type="button" onclick="openVetting()">Open assisted vetting</button></div>
 <dialog id="vettingDialog" aria-labelledby="vettingTitle">
@@ -191,6 +193,19 @@ function renderLegs(){
  }
 }
 function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+function renderBackups(data){
+ const items=data.items||[];
+ document.getElementById('backupList').innerHTML=items.map(function(item){
+  return '<div class="item"><b>'+escapeHtml(item.name)+'</b><div class="muted">'+(Number(item.size_bytes)/1024).toFixed(1)+' KB • '+escapeHtml(item.created_at)+'</div></div>';
+ }).join('')||'<small>No backups found yet.</small>';
+}
+async function createBackup(){
+ try{
+  const result=await api('/backups/create',{method:'POST',body:'{}'});
+  alert(result.message+' '+result.name);
+  await refresh()
+ }catch(e){alert(e.message)}
+}
 function renderNotifications(data){
  const items=data.items||[];
  const target=document.getElementById('notifications');
@@ -323,10 +338,10 @@ async function startDashboard(){
 }
 async function refresh(){
  try{
-  const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts'),api('/reports/summary'),api('/notifications')]);
-  const d=results[1],p=results[2],o=results[3],accountRows=results[4],report=results[5],notificationData=results[6];
+  const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts'),api('/reports/summary'),api('/notifications'),api('/backups')]);
+  const d=results[1],p=results[2],o=results[3],accountRows=results[4],report=results[5],notificationData=results[6],backupData=results[7];
   positionsCache=p;
-  renderAccounts(accountRows);renderReports(report);renderNotifications(notificationData);
+  renderAccounts(accountRows);renderReports(report);renderNotifications(notificationData);renderBackups(backupData);
   document.getElementById('status').textContent='API online';
   document.getElementById('bankroll').textContent='$'+Number(d.starting_bankroll).toLocaleString();
   document.getElementById('exposure').textContent='$'+Number(d.open_exposure).toLocaleString();
