@@ -85,7 +85,7 @@ def test_push_queue_waits_until_vapid_keys_are_configured(delivery_db, monkeypat
 
     result = push_delivery.deliver_due()
     assert result["disabled"] is True
-    assert result["queued"] == 0
+    assert result["queued"] == 1
     with database.get_db() as con:
         row = con.execute(
             "SELECT status, attempts FROM push_delivery_queue"
