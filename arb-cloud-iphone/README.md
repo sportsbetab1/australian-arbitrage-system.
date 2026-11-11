@@ -35,7 +35,7 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 - Betfair commission is hard-coded by bookmaker name and approximated; verify the actual commission and market rules manually.
 - In-app notifications are stored per user for position opened/unmatched and settled events, and each user has independent read state. Push subscriptions are stored per signed-in user and malformed/non-HTTPS endpoints are rejected. Push alerts are attempted after open and final-settlement events when VAPID keys are configured; delivery has no persistent retry queue, and email alerts are not wired to these events.
 - Settlement summary and CSV export are available in the authenticated dashboard.
-- Backup and restore scripts create integrity-checked SQLite snapshots and keep a pre-restore safety copy. They are manual and on the same storage volume by default; off-site storage, automated scheduling, and restore drills remain outstanding.
+- The authenticated dashboard can create and list integrity-checked SQLite snapshots; the restore script validates its source and preserves a pre-restore safety copy. Backups remain manual and on the same storage volume by default; off-site storage, automated scheduling, and a production restore drill remain outstanding.
 - Password recovery, monitoring, and production readiness work remain outstanding.
 - Do not deploy this branch for real-money use. It is under development and no deployment is performed by the repository checks.
 
