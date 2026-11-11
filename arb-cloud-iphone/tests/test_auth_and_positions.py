@@ -670,3 +670,28 @@ def test_push_subscription_requires_safe_https_endpoint(client):
             },
         )
         assert response.status_code == 400
+
+
+def test_reports_include_losses_and_csv_escapes_formula_cells(client):
+    assert login(client).status_code == 200
+    con = database.get_db()
+    try:
+        con.execute(
+            """
+            INSERT INTO positions (
+                event, sport, market, status, total_stake, actual_pnl, settled_at
+            ) VALUES (?, ?, ?, 'Settled', ?, ?, ?)
+            """,
+            ("=1+1", "Test", "@SUM(A1:A2)", 100, -50, datetime.now(timezone.utc).isoformat()),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    summary = client.get("/api/reports/summary").json()
+    assert summary["positions"]["net_realised_pnl"] == -50
+
+    response = client.get("/api/reports/settlements.csv")
+    assert response.status_code == 200
+    assert "'=1+1" in response.text
+    assert "'@SUM(A1:A2)" in response.text
