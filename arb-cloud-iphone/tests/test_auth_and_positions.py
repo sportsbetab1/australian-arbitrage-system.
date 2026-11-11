@@ -592,7 +592,7 @@ def test_unmatched_position_accepts_only_risk_improving_manual_hedge(client):
         if item["id"] == position_id
     )
     accepted_legs = [leg for leg in position["legs"] if leg["accepted"]]
-    for leg in accepted_legs:
+    for index, leg in enumerate(accepted_legs):
         actual_return = 210 if leg["selection"] == "Home" else 0
         settled = client.post(
             f"/api/positions/{position_id}/legs/{leg['id']}/settle",
@@ -600,6 +600,9 @@ def test_unmatched_position_accepts_only_risk_improving_manual_hedge(client):
             json={"actual_return": actual_return, "notes": "Isolated hedge test"},
         )
         assert settled.status_code == 200, settled.text
+        if index == 0:
+            assert settled.json()["position_status"] == "Unmatched"
+            assert settled.json()["remaining_legs"] == len(accepted_legs) - 1
     final = client.get("/api/positions").json()
     settled_position = next(item for item in final if item["id"] == position_id)
     assert settled_position["status"] == "Settled"
