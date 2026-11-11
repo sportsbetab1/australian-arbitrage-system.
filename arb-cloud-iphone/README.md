@@ -1,108 +1,83 @@
-# Australian Arbitrage Control — cloud + iPhone starter
+# Australian Arbitrage Control
 
-This is a deployable starter application, not a live odds service and not a betting bot.
-It provides a cloud API, iPhone-installable PWA dashboard, candidate arbitrage calculator,
-five-set exposure guard, manual confirmation workflow, opportunity log, and optional
-email / web-push notifications.
+Private mobile dashboard and API for calculating candidate arbitrage positions, tracking manually placed bets, and recording settlement. It is a manual control system: it does not place bets or connect to bookmaker accounts.
 
-## Configured limits
-- Starting bankroll: AUD 10,000 (planning figure; not connected to financial accounts)
-- Total stake per arbitrage set: AUD 500
-- Maximum simultaneous open sets: 5
-- Maximum open exposure: AUD 2,500
-- Minimum theoretical net ROI threshold: 1.5%
-- Sports phase: soccer, tennis, basketball/NBA, NRL, AFL, cricket
-- Horse racing: phase 2
-- Execution: manual confirmation only
+## Current operating rules
 
-## Critical current limitation
-The app does NOT fetch live bookmaker odds. `/api/scan` accepts candidate odds submitted
-to the API / entered in the dashboard. Before live scanning, choose an authorised odds-data
-provider that expressly permits your intended use, obtain credentials, and implement its
-documented API adapter. Do not scrape bookmaker pages, bypass access controls, or assume
-that a bookmaker permits arbitrage. This app does not place bets.
+These values describe the backend constants. They are planning controls, not balances read from bank or bookmaker accounts.
+
+- Combined starting bankroll reference: AUD 10,000
+- Hunta allocation reference: AUD 4,500
+- Jay allocation reference: AUD 4,500
+- Settlement buffer: AUD 1,000, with a 24-hour overdue pause
+- Maximum open exposure: AUD 7,500 (75% of the reference bankroll)
+- Protected reserve reference: AUD 2,500
+- Minimum calculated worst-case net ROI: 1.5%
+- Profit allocation after positive settled P/L: 75% reinvestment and 25% withdrawal
+- Betfair commission: currently assumed to be 6% on winnings, using a simplified model
+- Concurrent positions: limited by the exposure cap; each Betfair account is also limited to one unsettled leg
+- Position recording: binary/two-outcome markets only
 
 ## Sign-in and assisted vetting
 
-The dashboard now requires a Hunta or Jay sign-in. Passwords are hashed with Argon2, sessions use an HTTP-only cookie, and five failed logins lock that account for 15 minutes. Sessions last 12 hours.
+The dashboard supports Hunta and Jay accounts with Argon2 password hashes, HTTP-only sessions, a one-time first-run setup token, a 12-hour session lifetime, and a 15-minute lock after five failed sign-in attempts. Set a long random `AUTH_SETUP_TOKEN` in the hosting environment before first startup. The token is only for initial setup; password recovery is currently an administrator task.
 
-Before first startup, configure `AUTH_SETUP_TOKEN` to a long random secret in the server environment. On the first dashboard visit, use that one-time token to create both Hunta and Jay passwords (minimum 12 characters). Account setup is disabled after those two accounts exist. Set `AUTH_COOKIE_SECURE=true` behind HTTPS; the example local environment sets it to `false` for plain localhost. The one-time token is not a password-reset mechanism; account recovery currently requires an administrator to update the database.
+A qualified candidate exposes the **Open assisted vetting** button. The checklist asks the signed-in person to check the market, rules, outcomes, current odds, commission, limits, and selected accounts. One signed-in person may confirm and record both legs; a second person is not required. The user must place both bets manually and verify both were accepted before recording them.
 
-When a candidate qualifies, **Open assisted vetting** opens an accessible review checklist. It asks you to recheck the event and settlement rules, outcome coverage, current odds, commission, limits, and account balances before manual placement. One signed-in person may complete the full workflow and confirm both legs; a second person is not required. The backend records which signed-in account opened the position. This system does not place bets or independently verify bookmaker acceptance. Position recording currently supports two-outcome markets only.
+The app records the user's confirmation and the entered details. It cannot independently verify that a bookmaker accepted a bet. If one leg is accepted and the other is rejected or repriced, the current workflow does not yet provide a dedicated unmatched-bet recovery state. Treat this as a key outstanding safety feature.
 
-## Run locally
-Python 3.11+ recommended.
+## Current limitations
+
+- No live odds API is integrated. `/api/scan` calculates from submitted candidate odds.
+- No automated bookmaker bet placement or bookmaker-account connection exists.
+- Account opening balances are not live balances. Per-account deposits, withdrawals, and bet-level reconciliation are incomplete.
+- Position tracking is binary only. The candidate calculator may calculate other outcome counts, but the assisted position workflow does not support them.
+- Betfair commission is hard-coded by bookmaker name and approximated; verify the actual commission and market rules manually.
+- Email and push helper code exists, but delivery is not yet connected to position/settlement events. Push subscriptions are not yet separated by user.
+- Automated database backups, restore drills, password recovery, monitoring, and production readiness work remain outstanding.
+- Do not deploy this branch for real-money use. It is under development and no deployment is performed by the repository checks.
+
+## Development
+
+Python 3.11+:
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
 uvicorn app.main:app --reload
 ```
 
-Open http://127.0.0.1:8000. API docs: http://127.0.0.1:8000/docs
+Open http://127.0.0.1:8000. For local development set `AUTH_COOKIE_SECURE=false` in the environment. For HTTPS hosting, use secure cookies and keep all secrets in the host's private environment settings.
 
-## Cloud deployment (Render example)
-1. Create a private GitHub repository and upload this project.
-2. Create a Render account and connect the repository.
-3. Render can use `render.yaml` as a blueprint. The persistent disk stores SQLite data.
-4. Set email SMTP credentials in Render's environment settings. Use an email provider that
-   supports authenticated SMTP or adapt `send_email()` to its official API.
-5. Generate VAPID keys (for example with `pywebpush` tooling) and set
-   `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` as secrets.
-6. Deploy and use the HTTPS URL.
+Run the isolated test suite from this directory:
 
-For production scale, move from SQLite to managed PostgreSQL, add authentication,
-rate limiting, audit logs, backups, monitoring and secret rotation before exposing it
-beyond a private test deployment.
-
-## Install on iPhone
-1. Open the deployed HTTPS site in Safari.
-2. Tap Share → Add to Home Screen.
-3. Launch it from the Home Screen.
-4. Tap "Enable iPhone push notifications" and allow notifications.
-
-iOS web push is supported for Home Screen web apps on iOS/iPadOS 16.4+.
-Push only works after VAPID keys are configured and the device has subscribed.
-Email only works after SMTP variables are configured.
-
-## API candidate example
-POST `/api/scan`:
-
-```json
-{
-  "sport": "Soccer",
-  "event": "Example FC v Sample United",
-  "market": "90-minute match result",
-  "total_stake": 500,
-  "outcomes": [
-    {"selection":"Home","bookmaker":"Operator A","odds":2.15,"commission_pct":0},
-    {"selection":"Draw","bookmaker":"Operator B","odds":3.6,"commission_pct":0},
-    {"selection":"Away","bookmaker":"Operator C","odds":4.2,"commission_pct":0}
-  ]
-}
+```bash
+pytest -q
 ```
 
-The example values are illustrative only. Only submit prices that are current and available
-to your account. The calculator assumes mutually exclusive, collectively exhaustive outcomes
-and identical settlement conditions. Commission is approximated on net winnings and may
-not represent the rules of a particular exchange market. Verify market rules and fees.
+GitHub Actions runs compilation and the test suite on pull-request and development-branch updates. The workflow contains no deploy step.
 
-## Workflow
-1. Submit candidate prices to `/api/scan`.
-2. If it qualifies, verify event, market, selections, odds, stake availability, limits and
-   settlement rules yourself.
-3. Place both legs manually at the operators, ensuring both are accepted.
-4. Only then use "I have manually verified and placed both legs" to record the set.
-5. Record actual P/L when settled.
+## Intended workflow
 
-The open-set control is an exposure ledger. It does not confirm bookmaker bet acceptance.
-A rejected or moved second leg can leave you with an exposed position.
+1. Enter candidate odds and run the scanner.
+2. Manually verify that prices are current, the event and settlement rules match, all outcomes are covered, and funds are available.
+3. Open assisted vetting and complete the checklist.
+4. Manually place both legs at the bookmakers and verify both acceptances.
+5. Record the position.
+6. Enter each leg's actual return after settlement. Exposure remains committed until both legs are recorded.
+7. Review the resulting P/L and the 75/25 allocation.
 
-## Next engineering work
-- Integrate an authorised odds provider API with documented terms and data rights.
-- Add market matching / settlement-rule normalisation and stale-price checks.
-- Add user authentication, multi-device security and admin-only access.
-- Build exchange commission and racing-specific models (dead heats, deductions,
-  non-runners, SP/fixed odds, place terms) before phase 2.
-- Add exportable audit and P/L reports.
+A displayed ROI is theoretical and depends on the entered prices, identical settlement conditions, commission assumptions, and successful acceptance of both bets. It is not a profit guarantee.
+
+## Recommended next work
+
+1. Make unmatched-leg tracking and recovery the priority: create a position before placement, capture each leg's accepted/rejected/repriced status, and pause new positions while exposure is unmatched.
+2. Finish and regression-test authentication, session expiry/logout, origin protection, and assisted position recording.
+3. Add per-user push subscriptions and an event notification outbox; connect notifications to position/settlement events.
+4. Add controlled account transactions and reconciliation so balances reflect deposits, withdrawals, open bets, and settled returns.
+5. Add exportable reporting, database backup automation, and a tested restore process.
+6. Integrate an authorised odds provider only after its data rights, market coverage, and costs are confirmed.
+7. Complete a security and recovery review before any deployment.
+
+Horse racing is a later phase and needs separate handling for dead heats, deductions, non-runners, starting-price/fixed-odds differences, and place terms.
