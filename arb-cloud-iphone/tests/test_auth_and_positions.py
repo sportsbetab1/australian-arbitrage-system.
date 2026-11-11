@@ -111,6 +111,19 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client, monkeypatch
     finally:
         con.close()
     account_ids = {(row["owner"], row["bookmaker"]): row["id"] for row in accounts}
+    with database.get_db() as con:
+        users = con.execute("SELECT id, username FROM auth_users").fetchall()
+        for user in users:
+            con.execute(
+                "INSERT INTO push_subscriptions(user_id, subscription_json) VALUES (?, ?)",
+                (
+                    user["id"],
+                    json.dumps({
+                        "endpoint": f"https://fcm.googleapis.com/{user['username']}",
+                        "keys": {"p256dh": "test-key", "auth": "test-auth"},
+                    }),
+                ),
+            )
     for account_id in account_ids.values():
         funded = client.post(
             f"/api/accounts/{account_id}/opening-balance",
@@ -163,6 +176,12 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client, monkeypatch
     result = opened.json()
     assert result["status"] == "Open"
     assert result["confirmed_by"] == "hunta"
+    with database.get_db() as con:
+        queued_events = con.execute(
+            "SELECT COUNT(*) AS total FROM push_delivery_queue "
+            "WHERE status = 'pending' AND payload_json LIKE '%position_opened%'"
+        ).fetchone()["total"]
+    assert queued_events == 2
     assert push_events[0]["event_type"] == "position_opened"
     assert "No bookmaker bets were placed" in result["message"]
     hunta_notifications = client.get("/api/notifications").json()
