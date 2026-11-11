@@ -83,21 +83,32 @@ def initialise_system():
             amount REAL NOT NULL,
             description TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            reference_id INTEGER,
             FOREIGN KEY(account_id) REFERENCES accounts(id)
         );
 
         CREATE INDEX IF NOT EXISTS idx_position_legs_position
         ON position_legs(position_id);
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_account_transactions_reference
-        ON account_transactions(account_id, transaction_type, reference_id)
-        WHERE reference_id IS NOT NULL;
-
         CREATE INDEX IF NOT EXISTS idx_positions_status
         ON positions(status);
 
         CREATE INDEX IF NOT EXISTS idx_buffer_status
         ON buffer_ledger(status);
+        """)
+
+        transaction_columns = {
+            row["name"]
+            for row in con.execute("PRAGMA table_info(account_transactions)")
+        }
+        if "reference_id" not in transaction_columns:
+            con.execute(
+                "ALTER TABLE account_transactions ADD COLUMN reference_id INTEGER"
+            )
+        con.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_account_transactions_reference
+            ON account_transactions(account_id, transaction_type, reference_id)
+            WHERE reference_id IS NOT NULL
         """)
 
         settings = {
