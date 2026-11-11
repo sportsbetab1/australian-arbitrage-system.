@@ -266,6 +266,7 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client, monkeypatch
                 "event_id": "below-floor-event",
                 "market_id": "below-floor-market",
                 "odds": 1.5,
+                "stake": 50,
             },
         ],
     }
