@@ -38,9 +38,6 @@ jobs:
   windows-recovery-checks:
     needs: python-checks
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: ${{ runner.temp }}/arbitrage-source
     steps:
       # The repository name ends in a period, so checkout's default Windows
       # workspace is invalid. Download the tested source to a valid path.
@@ -54,4 +51,6 @@ jobs:
           cache: pip
           cache-dependency-path: ${{ runner.temp }}/arbitrage-source/requirements*.txt
       - run: pip install -r requirements-dev.txt
+        working-directory: ${{ runner.temp }}/arbitrage-source
       - run: python -m pytest tests/test_backup_restore.py tests/test_odds_provider.py -q
+        working-directory: ${{ runner.temp }}/arbitrage-source
