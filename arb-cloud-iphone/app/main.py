@@ -321,6 +321,19 @@ class SettleLeg(StrictModel):
     notes: str = ""
 
 
+class CashoutLeg(SettleLeg):
+    notes: str = Field(min_length=1, max_length=500)
+    manual_confirmation: bool = Field(strict=True)
+
+    @field_validator("notes")
+    @classmethod
+    def require_cashout_reason(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Enter a cashout reference or note.")
+        return value
+
+
 class BufferCommit(StrictModel):
     position_id: int | None = None
     amount: float = Field(gt=0)
@@ -1804,7 +1817,8 @@ def settlements_csv():
         rows = con.execute("""
             SELECT p.id, p.settled_at, p.sport, p.event, p.market,
                    p.total_stake, p.expected_roi, p.actual_pnl,
-                   COALESCE(SUM(l.commission_paid), 0) AS commission_paid
+                   COALESCE(SUM(l.commission_paid), 0) AS commission_paid,
+                   SUM(CASE WHEN l.close_type = 'cashout' THEN 1 ELSE 0 END) AS cashout_legs
             FROM positions p
             LEFT JOIN position_legs l ON l.position_id = p.id
             WHERE p.status = 'Settled'
@@ -1816,7 +1830,7 @@ def settlements_csv():
     writer = csv.writer(output)
     writer.writerow([
         "position_id", "settled_at", "sport", "event", "market",
-        "planned_stake", "expected_roi", "actual_pnl", "commission_paid",
+        "planned_stake", "expected_roi", "actual_pnl", "commission_paid", "cashout_legs",
     ])
     for row in rows:
         writer.writerow([csv_safe_cell(row[key]) for key in row.keys()])
@@ -1862,6 +1876,17 @@ def positions():
 
 @app.post("/api/positions/{position_id}/legs/{leg_id}/settle")
 def settle_leg(position_id: int, leg_id: int, req: SettleLeg, request: Request):
+    return close_position_leg(position_id, leg_id, req, request, "settlement")
+
+
+@app.post("/api/positions/{position_id}/legs/{leg_id}/cashout")
+def cashout_leg(position_id: int, leg_id: int, req: CashoutLeg, request: Request):
+    if not req.manual_confirmation:
+        raise HTTPException(400, "Confirm the full cashout was completed and credited by the bookmaker.")
+    return close_position_leg(position_id, leg_id, req, request, "cashout")
+
+
+def close_position_leg(position_id, leg_id, req, request, close_type):
     with db() as con:
         # Serialize concurrent settlement requests before checking the settled flag.
         con.execute("BEGIN IMMEDIATE")
@@ -1893,38 +1918,41 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg, request: Request):
 
         commission_pct = float(leg["commission_pct"] or 0)
         gross_profit = max(req.actual_return - leg["stake"], 0)
-        commission_paid = round(
+        # Cashout input is the final net credit, already after all fees.
+        commission_paid = 0.0 if close_type == "cashout" else round(
             gross_profit * commission_pct / 100,
             2,
         )
 
         con.execute("""
             UPDATE position_legs
-            SET settled = 1, actual_return = ?, commission_paid = ?
+            SET settled = 1, actual_return = ?, commission_paid = ?, close_type = ?
             WHERE id = ?
-        """, (req.actual_return, commission_paid, leg_id))
+        """, (req.actual_return, commission_paid, close_type, leg_id))
 
         con.execute("""
             INSERT INTO account_transactions (
                 account_id, transaction_type, amount,
                 description, reference_id
             )
-            VALUES (?, 'settlement_return', ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
         """, (
             leg["account_id"],
+            "cashout_return" if close_type == "cashout" else "settlement_return",
             round(req.actual_return - commission_paid, 2),
-            f"Position {position_id} settlement return after commission",
+            f"Position {position_id} {close_type} return after commission",
             leg_id,
         ))
         con.execute(
             "INSERT INTO audit_log(action, details) VALUES (?, ?)",
             (
-                "position_leg_settled",
+                "position_leg_cashed_out" if close_type == "cashout" else "position_leg_settled",
                 json.dumps({
                     "position_id": position_id,
                     "leg_id": leg_id,
                     "actual_return": req.actual_return,
                     "commission_paid": commission_paid,
+                    "close_type": close_type,
                     "recorded_by": request.state.auth_user["username"],
                     "notes": req.notes,
                 }),
@@ -1940,10 +1968,10 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg, request: Request):
         if remaining > 0:
             create_user_notifications(
                 con,
-                "position_leg_settled",
+                "position_leg_cashed_out" if close_type == "cashout" else "position_leg_settled",
                 position_id,
-                "Position leg settled",
-                f"{position['event']}: one leg settled; {remaining} accepted or pending leg(s) remain.",
+                "Position leg cashed out" if close_type == "cashout" else "Position leg settled",
+                f"{position['event']}: one leg closed by {close_type}; {remaining} accepted or pending leg(s) remain.",
             )
             return {
                 "ok": True,
@@ -1951,9 +1979,10 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg, request: Request):
                 "position_status": position["status"],
                 "remaining_legs": remaining,
                 "commission_paid": commission_paid,
+                "close_type": close_type,
                 "message": (
-                    "One leg settled. Full position exposure remains "
-                    "committed until both legs settle."
+                    "One leg closed. Full position exposure remains "
+                    "committed until every accepted leg is closed."
                 ),
             }
 
@@ -2019,11 +2048,12 @@ def settle_leg(position_id: int, leg_id: int, req: SettleLeg, request: Request):
         "position_status": "Settled",
         "actual_pnl": pnl,
         "total_commission": totals["total_commission"],
+        "close_type": close_type,
         **allocation,
         "message": (
-            "Unmatched exposure closed after the accepted leg was settled."
+            "Unmatched exposure closed after every accepted leg was closed."
             if position["status"] == "Unmatched"
-            else "Both legs settled. Position exposure released."
+            else "Every accepted leg is closed. Position exposure released."
         ),
     }
 
@@ -2299,3 +2329,4 @@ def manifest():
 if __name__ == "__main__":
     initialise_system()
     print("Arbitrage control database initialised.")
+

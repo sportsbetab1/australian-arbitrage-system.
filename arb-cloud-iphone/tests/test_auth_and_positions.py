@@ -80,6 +80,160 @@ def test_logout_revokes_copied_session_token(client):
     assert client.get("/api/auth/status").json()["authenticated"] is False
 
 
+@pytest.fixture()
+def cashout_position(client, monkeypatch):
+    monkeypatch.setattr(main, "send_push", lambda *args, **kwargs: 0)
+    assert login(client).status_code == 200
+    headers = {"Origin": "http://testserver"}
+    accounts = client.get("/api/accounts").json()
+    chosen = [next(a for a in accounts if a["owner"] == owner and a["bookmaker"] == book)
+              for owner, book in [("Hunta", "Sportsbet"), ("Jay", "Betfair")]]
+    for account in chosen:
+        assert client.post(f"/api/accounts/{account['id']}/opening-balance", headers=headers,
+                           json={"amount": 500}).status_code == 200
+
+    def open_position(unmatched=False):
+        payload = {
+            "sport": "Test", "event": "Cashout fixture", "market": "Winner",
+            "event_id": "cashout-event", "market_id": "cashout-market", "market_type": "binary",
+            "possible_outcomes": ["home", "away"], "market_rules_verified": True,
+            "manual_confirmation": True,
+            "legs": [{"account_id": a["id"], "event_id": "cashout-event", "market_id": "cashout-market",
+                      "outcome_id": outcome, "selection": outcome, "odds": 2.2, "stake": 100,
+                      "manually_accepted": not (unmatched and index == 1)}
+                     for index, (a, outcome) in enumerate(zip(chosen, ["home", "away"]))],
+        }
+        response = client.post("/api/positions/" + ("unmatched" if unmatched else "open"),
+                               headers=headers, json=payload)
+        assert response.status_code == 200, response.text
+        position_id = response.json()["position_id"]
+        return next(p for p in client.get("/api/positions").json() if p["id"] == position_id)
+
+    return open_position, headers
+
+
+def test_cashout_net_credit_mixed_settlement_and_duplicate_protection(client, cashout_position):
+    open_position, headers = cashout_position
+    position = open_position()
+    home, away = position["legs"]
+    endpoint = f"/api/positions/{position['id']}/legs/{away['id']}/cashout"
+    payload = {"actual_return": 120, "notes": "Bookmaker reference C123", "manual_confirmation": True}
+    response = client.post(endpoint, headers=headers, json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["commission_paid"] == 0
+    assert response.json()["remaining_legs"] == 1
+    assert client.get("/api/dashboard").json()["open_exposure"] == 200
+    assert next(a for a in client.get("/api/accounts").json() if a["id"] == away["account_id"])["balance"] == 520
+    assert client.post(endpoint, headers=headers, json=payload).status_code == 409
+    assert client.post(endpoint.replace("/cashout", "/settle"), headers=headers,
+                       json={"actual_return": 200}).status_code == 409
+
+    final = client.post(f"/api/positions/{position['id']}/legs/{home['id']}/settle",
+                        headers=headers, json={"actual_return": 0})
+    assert final.status_code == 200, final.text
+    assert final.json()["actual_pnl"] == -80
+    assert client.get("/api/dashboard").json()["open_exposure"] == 0
+    assert client.get("/api/reports/summary").json()["positions"]["net_realised_pnl"] == -80
+    import csv
+    import io
+    rows = list(csv.DictReader(io.StringIO(client.get("/api/reports/settlements.csv").text)))
+    assert rows[0]["cashout_legs"] == "1"
+    with database.get_db() as con:
+        entries = con.execute("SELECT amount FROM account_transactions WHERE transaction_type = 'cashout_return'").fetchall()
+        assert [e["amount"] for e in entries] == [120]
+        details = json.loads(con.execute("SELECT details FROM audit_log WHERE action = 'position_leg_cashed_out'").fetchone()["details"])
+        assert details["recorded_by"] == "hunta"
+        assert details["notes"] == "Bookmaker reference C123"
+    notifications = client.get("/api/notifications").json()["items"]
+    assert any(n["event_type"] == "position_leg_cashed_out" for n in notifications)
+
+
+@pytest.mark.parametrize("changes,status", [
+    ({"actual_return": -1}, 422), ({"actual_return": "Infinity"}, 422),
+    ({"actual_return": 1.001}, 422), ({"notes": "   "}, 422),
+    ({"manual_confirmation": False}, 400), ({"manual_confirmation": "true"}, 422),
+])
+def test_invalid_cashouts_do_not_change_balances(client, cashout_position, changes, status):
+    open_position, headers = cashout_position
+    position = open_position()
+    leg = position["legs"][0]
+    payload = {"actual_return": 90, "notes": "Confirmed full cashout", "manual_confirmation": True, **changes}
+    response = client.post(f"/api/positions/{position['id']}/legs/{leg['id']}/cashout",
+                           headers=headers, json=payload)
+    assert response.status_code == status, response.text
+    assert client.get("/api/dashboard").json()["open_exposure"] == 200
+    with database.get_db() as con:
+        assert con.execute("SELECT COUNT(*) FROM account_transactions WHERE transaction_type = 'cashout_return'").fetchone()[0] == 0
+
+
+def test_unmatched_cashout_closes_only_accepted_leg(client, cashout_position):
+    open_position, headers = cashout_position
+    position = open_position(unmatched=True)
+    accepted = next(l for l in position["legs"] if l["accepted"])
+    rejected = next(l for l in position["legs"] if not l["accepted"])
+    payload = {"actual_return": 0, "notes": "Full close with zero credit", "manual_confirmation": True}
+    endpoint = f"/api/positions/{position['id']}/legs/"
+    assert client.post(endpoint + str(rejected["id"]) + "/cashout", headers=headers, json=payload).status_code == 409
+    response = client.post(endpoint + str(accepted["id"]) + "/cashout", headers=headers, json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["position_status"] == "Settled"
+    assert response.json()["actual_pnl"] == -100
+    assert client.get("/api/dashboard").json()["open_exposure"] == 0
+
+
+def test_concurrent_cashout_and_settlement_credit_leg_once(client, cashout_position):
+    from concurrent.futures import ThreadPoolExecutor
+
+    open_position, headers = cashout_position
+    position = open_position()
+    leg = position["legs"][0]
+    endpoint = f"/api/positions/{position['id']}/legs/{leg['id']}/"
+    def close(kind):
+        payload = {"actual_return": 110, "notes": "Concurrent close"}
+        if kind == "cashout":
+            payload["manual_confirmation"] = True
+        return client.post(endpoint + kind, headers=headers, json=payload).status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(close, ["cashout", "settle"]))
+    assert sorted(statuses) == [200, 409]
+    with database.get_db() as con:
+        assert con.execute("SELECT COUNT(*) FROM account_transactions WHERE reference_id = ? AND transaction_type IN ('cashout_return', 'settlement_return')", (leg["id"],)).fetchone()[0] == 1
+
+
+def test_full_cashouts_close_profitable_position_and_allocate_once(client, cashout_position):
+    open_position, headers = cashout_position
+    position = open_position()
+    for leg, amount in zip(position["legs"], [110, 120]):
+        result = client.post(f"/api/positions/{position['id']}/legs/{leg['id']}/cashout", headers=headers,
+                             json={"actual_return": amount, "notes": "Full cashout credited", "manual_confirmation": True})
+        assert result.status_code == 200, result.text
+    assert result.json()["position_status"] == "Settled"
+    assert result.json()["actual_pnl"] == 30
+    assert result.json()["total_commission"] == 0
+    with database.get_db() as con:
+        assert con.execute("SELECT COUNT(*) FROM profit_allocations WHERE position_id = ?", (position["id"],)).fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM position_legs WHERE position_id = ? AND close_type = 'cashout'", (position["id"],)).fetchone()[0] == 2
+
+
+def test_cashout_migration_preserves_legacy_settlements(client, cashout_position):
+    open_position, headers = cashout_position
+    position = open_position()
+    home, away = position["legs"]
+    assert client.post(f"/api/positions/{position['id']}/legs/{home['id']}/settle", headers=headers,
+                       json={"actual_return": 210}).status_code == 200
+    with database.get_db() as con:
+        con.execute("ALTER TABLE position_legs DROP COLUMN close_type")
+    database.migrate_position_schema()
+    database.migrate_position_schema()
+    with database.get_db() as con:
+        legacy = con.execute("SELECT settled, actual_return, close_type FROM position_legs WHERE id = ?", (home["id"],)).fetchone()
+        assert tuple(legacy) == (1, 210, None)
+    final = client.post(f"/api/positions/{position['id']}/legs/{away['id']}/cashout", headers=headers,
+                        json={"actual_return": 120, "notes": "Post-migration cashout", "manual_confirmation": True})
+    assert final.status_code == 200, final.text
+    assert final.json()["actual_pnl"] == 130
+
+
 def test_expired_login_lockout_resets_failed_attempts(client):
     con = database.get_db()
     try:

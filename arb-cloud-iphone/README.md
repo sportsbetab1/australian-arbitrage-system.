@@ -87,7 +87,7 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 
 ## Recommended next work
 
-1. Add cashout recording and continue validating unmatched recovery. The assisted form now records actual accepted odds and stakes, including smaller accepted stakes; unmatched recovery still pauses new positions and requires each manually accepted hedge to improve the worst-case result.
+1. Continue validating unmatched recovery and review partial-cashout requirements. Full-leg cashouts can now be recorded manually; partial cashouts are not supported. Unmatched recovery still pauses new positions and requires each manually accepted hedge to improve the worst-case result.
 2. Verify The Odds API coverage, event/market matching, provider freshness, and bookmaker-specific rules in a controlled review before relying on feed candidates.
 3. Connect email alerts to the existing event notifications and schedule the push retry command on the host.
 4. Reconcile manually entered bookmaker balances against statements and add adjustment/audit controls.
@@ -96,6 +96,25 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 7. Complete a security and recovery review before any deployment.
 
 Horse racing is a later phase and needs separate handling for dead heats, deductions, non-runners, starting-price/fixed-odds differences, and place terms.
+
+## Record a completed full cashout
+
+For an accepted, open leg, choose **Record full cashout** after the bookmaker
+has fully closed that leg. Enter the final net AUD credit, including returned
+stake and after all fees, provide a reference/note, and confirm it was credited.
+The application records the cashout; it does not request one from a bookmaker.
+Partial cashouts and cashout reversals are not supported.
+
+`POST /api/positions/{position_id}/legs/{leg_id}/cashout` accepts
+`actual_return`, `notes`, and `manual_confirmation: true`. It credits the account
+once and records the user and reference in the audit log. Cashout returns are
+already net of fees, so no additional commission is deducted. Ordinary
+settlements continue using the existing commission calculation. The full
+position exposure remains committed until every accepted leg has been closed;
+then realised P/L and the existing positive-profit allocation are recorded.
+The settlement CSV includes `cashout_legs` and position details expose each
+leg's `close_type`. Startup adds this nullable column to existing databases;
+historical closed legs without a type remain ordinary settlements.
 
 ## Feed and recovery validation
 

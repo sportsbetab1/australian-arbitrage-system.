@@ -233,6 +233,7 @@ def migrate_position_schema():
             "outcome_id": "TEXT",
             "commission_pct": "REAL NOT NULL DEFAULT 0",
             "commission_paid": "REAL NOT NULL DEFAULT 0",
+            "close_type": "TEXT",
         },
     }
 
@@ -260,3 +261,4 @@ def migrate_position_schema():
 
     finally:
         conn.close()
+

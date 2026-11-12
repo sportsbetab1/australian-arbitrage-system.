@@ -181,6 +181,21 @@ a{color:var(--deep-teal)}
   </div>
  </div>
 </dialog>
+<dialog id="cashoutDialog">
+ <div class="dialog-body">
+  <div class="dialog-head"><h2>Record completed full cashout</h2><button class="secondary dialog-close" type="button" onclick="document.getElementById('cashoutDialog').close()">Cancel</button></div>
+  <p class="muted">Record a full cashout already completed at the bookmaker. Partial cashouts are not supported. Exposure stays committed until every accepted leg is closed.</p>
+  <p id="cashoutLegDescription"></p>
+  <form id="cashoutForm">
+   <label for="cashoutAmount">Net amount credited (AUD)</label><input id="cashoutAmount" type="number" min="0" step="0.01" inputmode="decimal" required>
+   <small>Include returned stake and enter the final amount after all fees. No additional commission will be deducted.</small>
+   <p><label for="cashoutNotes">Bookmaker cashout reference or note</label><input id="cashoutNotes" maxlength="500" required></p>
+   <label class="check-row"><input id="cashoutConfirmed" type="checkbox" required>The bookmaker has fully closed this leg and credited the amount entered above.</label>
+   <div id="cashoutMessage" class="result-message hidden" role="status"></div>
+   <button id="cashoutSubmit" type="submit">Record completed cashout</button>
+  </form>
+ </div>
+</dialog>
 <script>
 let legCount=2, lastOpportunity=null, lastCandidate=null, currentUser=null, accountsCache=[], positionsCache=[], selectedLegAccounts=[], refreshTimer=null, liveCandidateRows=[];
 function addLeg(){if(legCount>=3)return;legCount++;renderLegs()}
@@ -350,8 +365,9 @@ async function refresh(){
   const openPositions=p.filter(function(x){return x.status==='Open'||x.status==='Unmatched'});
   document.getElementById('sets').innerHTML=openPositions.map(function(x){
    const legs=(x.legs||[]).map(function(l){
-    const settleButton=l.accepted&&!l.settled?' <button class="secondary" onclick="settle('+Number(x.id)+','+Number(l.id)+')">Record leg settlement</button>':'';
-    return '<div class="item">'+escapeHtml(l.owner)+' • '+escapeHtml(l.selection)+' at '+escapeHtml(l.bookmaker)+' • $'+Number(l.stake).toFixed(2)+' stake • '+(l.accepted?'accepted':'not accepted')+settleButton+'</div>';
+    const settleButton=l.accepted&&!l.settled?' <button class="secondary" onclick="settle('+Number(x.id)+','+Number(l.id)+')">Record leg settlement</button> <button class="secondary" onclick="recordCashout('+Number(x.id)+','+Number(l.id)+')">Record full cashout</button>':'';
+    const legStatus=l.settled&&l.accepted?(l.close_type==='cashout'?'cashed out':'settled')+' • return $'+Number(l.actual_return).toFixed(2):(l.accepted?'accepted':'not accepted');
+    return '<div class="item">'+escapeHtml(l.owner)+' • '+escapeHtml(l.selection)+' at '+escapeHtml(l.bookmaker)+' • $'+Number(l.stake).toFixed(2)+' stake • '+legStatus+settleButton+'</div>';
    }).join('');
    const hedgeAction=x.status==='Unmatched'?'<button class="secondary" type="button" onclick="showHedgeForm('+Number(x.id)+')">Record manually accepted hedge</button><div id="hedge-form-'+Number(x.id)+'" class="hidden"></div>':'';
    return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.status)+' • '+escapeHtml(x.market)+' • $'+Number(x.total_stake).toFixed(2)+' • '+(Number(x.expected_roi)*100).toFixed(2)+'% theoretical</div>'+legs+hedgeAction+'</div>';
@@ -576,12 +592,43 @@ async function recordHedge(positionId){
 async function settle(positionId,legId){
  const actual=prompt('Enter the total return received from the bookmaker in AUD for this leg (include returned stake; enter 0 if lost):');
  if(actual===null)return;
+ if(!actual.trim()||!Number.isFinite(Number(actual))||Number(actual)<0){alert('Enter a valid return amount, including 0 for a loss.');return}
  try{
   await api('/positions/'+positionId+'/legs/'+legId+'/settle',{
    method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:'Settled manually'})
   });
   await refresh()
  }catch(e){alert(e.message)}
+}
+let cashoutTarget=null;
+function recordCashout(positionId,legId){
+ const position=positionsCache.find(function(p){return Number(p.id)===Number(positionId)});
+ const leg=position&&(position.legs||[]).find(function(l){return Number(l.id)===Number(legId)});
+ if(!leg||!leg.accepted||leg.settled)return;
+ cashoutTarget={positionId:Number(positionId),legId:Number(legId)};
+ document.getElementById('cashoutForm').reset();
+ document.getElementById('cashoutMessage').classList.add('hidden');
+ document.getElementById('cashoutLegDescription').textContent=position.event+' — '+leg.owner+' / '+leg.bookmaker+' / '+leg.selection+' / AUD '+Number(leg.stake).toFixed(2)+' stake';
+ document.getElementById('cashoutDialog').showModal();
+}
+async function submitCashout(event){
+ event.preventDefault();
+ if(!cashoutTarget)return;
+ const target=cashoutTarget;
+ const actual=document.getElementById('cashoutAmount').value;
+ const notes=document.getElementById('cashoutNotes').value.trim();
+ const confirmed=document.getElementById('cashoutConfirmed').checked;
+ const message=document.getElementById('cashoutMessage'),button=document.getElementById('cashoutSubmit');
+ if(!actual.trim()||!Number.isFinite(Number(actual))||Number(actual)<0||!notes||!confirmed){message.textContent='Enter the net credit and a reference, then confirm the completed full cashout.';message.classList.remove('hidden');return}
+ button.disabled=true;
+ try{
+  await api('/positions/'+target.positionId+'/legs/'+target.legId+'/cashout',{
+   method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:notes,manual_confirmation:confirmed})
+  });
+  document.getElementById('cashoutDialog').close();cashoutTarget=null;
+  await refresh()
+ }catch(e){message.textContent=e.message;message.classList.remove('hidden')}
+ finally{button.disabled=false}
 }
 async function enablePush(){
  try{
@@ -594,122 +641,6 @@ async function enablePush(){
   await api('/push/subscribe',{method:'POST',body:JSON.stringify({subscription:sub})});alert('Push notifications enabled.');
  }catch(e){alert(e.message)}
 }
-initialize();
-</script></body></html>+Number(lastOpportunity.stakes[i]).toFixed(2)+'</div><label for="placedOdds'+i+'">Accepted decimal odds</label><input id="placedOdds'+i+'" class="placed-odds" type="number" min="1.01" step="0.01" value="'+Number(o.odds).toFixed(2)+'"><label for="placedStake'+i+'">Accepted stake (AUD)</label><input id="placedStake'+i+'" class="placed-stake" type="number" min="0.01" step="0.01" value="'+Number(lastOpportunity.stakes[i]).toFixed(2)+'"><label class="check-row"><input type="checkbox" class="leg-accepted">This leg was placed manually and the bookmaker accepted it.</label></div>'
- });
- document.getElementById('vettingReviewStage').classList.add('hidden');
- document.getElementById('manualPlacementStage').classList.remove('hidden');
- document.getElementById('recordPositionButton').disabled=true;
- document.getElementById('allPlaced').onchange=updateRecordPosition;
- document.querySelectorAll('.leg-accepted').forEach(function(c){c.onchange=updateRecordPosition})
-}
-function updateRecordPosition(){
- const checks=Array.from(document.querySelectorAll('.leg-accepted'));
- const acceptedCount=checks.filter(function(c){return c.checked}).length;
- document.getElementById('recordPositionButton').disabled=!(acceptedCount===2&&document.getElementById('allPlaced').checked);
- document.getElementById('recordUnmatchedButton').disabled=acceptedCount!==1
-}
-async function recordPosition(){
- updateRecordPosition();if(document.getElementById('recordPositionButton').disabled)return;
- const eventId=slug(lastCandidate.event),marketId=slug(lastCandidate.market);
- const outcomes=lastCandidate.outcomes.map(function(o){return slug(o.selection)});
- if(new Set(outcomes).size!==2){document.getElementById('vettingMessage').textContent='The two selections need distinct names before they can be recorded.';document.getElementById('vettingMessage').classList.remove('hidden');return}
- const request={
-  sport:lastCandidate.sport,event:lastCandidate.event,market:lastCandidate.market,
-  event_id:eventId,market_id:marketId,market_type:'binary',
-  possible_outcomes:outcomes,market_rules_verified:true,manual_confirmation:true,
-  notes:'Assisted vetting completed and both legs manually confirmed by '+(currentUser?currentUser.display_name:'signed-in user')+'.',
-  legs:lastCandidate.outcomes.map(function(o,i){
-   return {account_id:Number(selectedLegAccounts[i].id),event_id:eventId,market_id:marketId,outcome_id:outcomes[i],selection:o.selection,odds:Number(o.odds),stake:Number(lastOpportunity.stakes[i]),commission_pct:Number(o.commission_pct||0),manually_accepted:true}
-  })
- };
- const button=document.getElementById('recordPositionButton'),message=document.getElementById('vettingMessage');
- button.disabled=true;message.textContent='Recording the manually placed position…';message.classList.remove('hidden');
- try{
-  const result=await api('/positions/open',{method:'POST',body:JSON.stringify(request)});
-  message.textContent='Position recorded. '+result.message;
-  lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
-  setTimeout(closeVetting,1400)
- }catch(e){message.textContent=e.message;button.disabled=false}
-}
-async function recordUnmatchedPosition(){
- const accepted=Array.from(document.querySelectorAll('.leg-accepted')).filter(function(c){return c.checked}).length;
- if(accepted!==1)return;
- if(!confirm('Record one accepted leg as unmatched? This pauses new positions until the accepted leg is settled.'))return;
- const eventId=slug(lastCandidate.event),marketId=slug(lastCandidate.market);
- const outcomes=lastCandidate.outcomes.map(function(o){return slug(o.selection)});
- if(new Set(outcomes).size!==2){document.getElementById('vettingMessage').textContent='The two selections need distinct names before they can be recorded.';document.getElementById('vettingMessage').classList.remove('hidden');return}
- const request={
-  sport:lastCandidate.sport,event:lastCandidate.event,market:lastCandidate.market,
-  event_id:eventId,market_id:marketId,market_type:'binary',
-  possible_outcomes:outcomes,market_rules_verified:true,manual_confirmation:true,
-  notes:'One leg accepted; unmatched exposure recorded by '+(currentUser?currentUser.display_name:'signed-in user')+'.',
-  legs:lastCandidate.outcomes.map(function(o,i){
-   const check=document.querySelectorAll('.leg-accepted')[i];
-   return {account_id:Number(selectedLegAccounts[i].id),event_id:eventId,market_id:marketId,outcome_id:outcomes[i],selection:o.selection,odds:Number(o.odds),stake:Number(lastOpportunity.stakes[i]),commission_pct:Number(o.commission_pct||0),manually_accepted:check.checked}
-  })
- };
- const button=document.getElementById('recordUnmatchedButton'),message=document.getElementById('vettingMessage');
- button.disabled=true;message.textContent='Recording unmatched exposure and pausing new positions…';message.classList.remove('hidden');
- try{
-  const result=await api('/positions/unmatched',{method:'POST',body:JSON.stringify(request)});
-  message.textContent='Unmatched exposure recorded. '+result.message;
-  lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
-  setTimeout(closeVetting,3000)
- }catch(e){message.textContent=e.message;button.disabled=false}
-}
-function showHedgeForm(positionId){
- const position=positionsCache.find(function(x){return Number(x.id)===Number(positionId)});
- const target=document.getElementById('hedge-form-'+Number(positionId));
- if(!position||!target)return;
- let outcomes=[];try{outcomes=JSON.parse(position.possible_outcomes_json||'[]')}catch(e){}
- const accounts=accountsCache.filter(function(a){return a.status==='active'});
- const currency=String.fromCharCode(36);
- target.innerHTML='<p class="muted">Place the hedge yourself first. Choose an outcome and account, then confirm bookmaker acceptance.</p>'+
-  '<label>Hedge outcome</label><select id="hedge-outcome-'+positionId+'">'+outcomes.map(function(o){return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'}).join('')+'</select>'+
-  '<label>Bookmaker account</label><select id="hedge-account-'+positionId+'">'+accounts.map(function(a){return '<option value="'+Number(a.id)+'">'+escapeHtml(a.owner)+' — '+escapeHtml(a.bookmaker)+' (AUD '+Number(a.balance).toFixed(2)+')</option>'}).join('')+'</select>'+
-  '<label>Accepted decimal odds</label><input id="hedge-odds-'+positionId+'" type="number" min="1.01" step="0.01" inputmode="decimal">'+
-  '<label>Accepted stake (AUD)</label><input id="hedge-stake-'+positionId+'" type="number" min="0.01" step="0.01" inputmode="decimal">'+
-  '<button type="button" onclick="recordHedge('+Number(positionId)+')">Confirm accepted hedge</button>';
- target.classList.remove('hidden')
-}
-async function recordHedge(positionId){
- const accountId=Number(document.getElementById('hedge-account-'+positionId).value);
- const outcomeId=document.getElementById('hedge-outcome-'+positionId).value;
- if(!confirm('Have you personally placed this hedge and verified bookmaker acceptance at these odds and stake?'))return;
- const payload={
-  account_id:accountId,outcome_id:outcomeId,selection:outcomeId,
-  odds:Number(document.getElementById('hedge-odds-'+positionId).value),
-  stake:Number(document.getElementById('hedge-stake-'+positionId).value),
-  manual_confirmation:true,manually_accepted:true,
-  notes:'Hedge manually placed and acceptance confirmed by '+(currentUser?currentUser.display_name:'signed-in user')
- };
- try{
-  const result=await api('/positions/'+Number(positionId)+'/hedge',{method:'POST',body:JSON.stringify(payload)});
-  alert(result.message+' Worst-case return improved from AUD '+Number(result.worst_case_profit_before).toFixed(2)+' to AUD '+Number(result.worst_case_profit_after).toFixed(2)+'.');
-  await refresh()
- }catch(e){alert(e.message)}
-}
-async function settle(positionId,legId){
- const actual=prompt('Enter the total return received from the bookmaker in AUD for this leg (include returned stake; enter 0 if lost):');
- if(actual===null)return;
- try{
-  await api('/positions/'+positionId+'/legs/'+legId+'/settle',{
-   method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:'Settled manually'})
-  });
-  await refresh()
- }catch(e){alert(e.message)}
-}
-async function enablePush(){
- try{
-  if(!('serviceWorker' in navigator)||!('PushManager' in window))throw Error('Push is not supported in this browser. On iPhone, install this site to Home Screen and open it there (iOS 16.4+).');
-  const key=await api('/push/public-key');if(!key.public_key)throw Error('Cloud VAPID keys are not configured yet.');
-  const reg=await navigator.serviceWorker.register('/static/sw.js');
-  const permission=await Notification.requestPermission();if(permission!=='granted')throw Error('Notification permission not granted.');
-  const b=Uint8Array.from(atob(key.public_key.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
-  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b});
-  await api('/push/subscribe',{method:'POST',body:JSON.stringify({subscription:sub})});alert('Push notifications enabled.');
- }catch(e){alert(e.message)}
-}
+document.getElementById('cashoutForm').addEventListener('submit',submitCashout);
 initialize();
 </script></body></html>
