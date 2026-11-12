@@ -29,9 +29,11 @@ jobs:
           name: windows-recovery-source
           path: |
             arb-cloud-iphone/app/odds.py
+            arb-cloud-iphone/app/database.py
             arb-cloud-iphone/scripts/*.py
             arb-cloud-iphone/tests/test_backup_restore.py
             arb-cloud-iphone/tests/test_odds_provider.py
+            arb-cloud-iphone/tests/test_manage_auth.py
             arb-cloud-iphone/pytest.ini
             arb-cloud-iphone/requirements*.txt
 
@@ -50,5 +52,6 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
         working-directory: ${{ runner.temp }}/arbitrage-source
-      - run: python -m pytest tests/test_backup_restore.py tests/test_odds_provider.py -q
+      - run: python -m pytest tests/test_backup_restore.py tests/test_odds_provider.py tests/test_manage_auth.py -q
         working-directory: ${{ runner.temp }}/arbitrage-source
+

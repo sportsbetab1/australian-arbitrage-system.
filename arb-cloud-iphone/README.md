@@ -34,8 +34,8 @@ errors and CSV reports, use `Cache-Control: no-store`.
 Both signed-in users can maintain shared bookmaker records and record either
 person's manually accepted legs; the owner field identifies the bookmaker
 account, not a separate access role. Notifications and push subscriptions remain
-user scoped. Administrator password changes still require explicit session
-revocation in the database; a self-service recovery flow is not implemented.
+user scoped. The host recovery command resets a password and revokes that user's
+sessions together; a self-service recovery flow is not implemented.
 
 A qualified candidate exposes the **Open assisted vetting** button. The checklist asks the signed-in person to check the market, rules, outcomes, current odds, commission, limits, and selected accounts. One signed-in person may confirm and record both legs; a second person is not required. The user places both bets manually and, for each accepted leg, records the odds and stake the bookmaker actually accepted. The position calculation and account ledger use those entered accepted values. If actual accepted prices fall below the 1.5% candidate threshold, the system still records the placed legs and flags the lower calculated return so exposure and settlement remain tracked.
 
@@ -51,7 +51,7 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 - In-app notifications are stored per user for opened, unmatched, partial-leg settlement, and final settlement events, with independent read state. Push subscriptions are stored per signed-in user; delivery endpoints must use HTTPS on Google FCM, Apple Web Push, or Mozilla Push Services hosts. Push events enter a persistent outbox and are attempted immediately when VAPID keys are configured. Failed attempts retry with exponential backoff for up to 10 attempts; exhausted deliveries are marked dead for review. Signed-in users can review queue counts and sanitized dead-letter errors at `/api/push/delivery-status`. Email alerts are not wired to these events.
 - Settlement summary and CSV export are available in the authenticated dashboard.
 - The authenticated dashboard can create and list integrity-checked SQLite snapshots; the restore script validates its source and preserves a pre-restore safety copy. Backups remain manual and on the same storage volume by default; off-site storage, automated scheduling, and a production restore drill remain outstanding.
-- Password recovery, monitoring, and production readiness work remain outstanding.
+- Self-service password recovery, monitoring, and production readiness work remain outstanding.
 - Do not deploy this branch for real-money use. It is under development and no deployment is performed by the repository checks.
 
 ## Development
@@ -70,6 +70,42 @@ uvicorn app.main:app --reload
 ```
 
 Open http://127.0.0.1:8000. For local development set `AUTH_COOKIE_SECURE=false` in the environment. For HTTPS hosting, use secure cookies and keep all secrets in the host's private environment settings.
+
+### Windows local launcher
+
+After creating `.venv` and installing the requirements, run from this directory:
+
+```powershell
+.\start-local.ps1
+```
+
+The launcher binds only to `127.0.0.1`, uses `data/local-arbitrage.sqlite`, and
+prints a first-run setup token. Open the displayed URL, enter that token, and
+choose your own Hunta and Jay passwords. Existing accounts are preserved when
+the launcher is restarted. Use `-Port 8001` if the default port is occupied.
+The setup token is a secret; do not paste it into chat or commit it. This script
+does not configure hosting, live odds credentials, or background scheduling.
+
+### Administrator account recovery
+
+Run from the application directory using the environment's Python and access
+to the existing database. The recovery command never creates users or a new
+database. Take a backup first and record a meaningful reason:
+
+```powershell
+python -m scripts.manage_auth reset-password --db ./data/local-arbitrage.sqlite --user hunta --reason "Verified account recovery"
+python -m scripts.manage_auth revoke-sessions --db ./data/local-arbitrage.sqlite --user jay --reason "Lost device"
+```
+
+Password reset prompts twice with hidden input in an interactive terminal;
+passwords cannot be passed as arguments, through environment variables, or
+piped into this command. It hashes the replacement password, clears lockout,
+revokes all of that user's current sessions, and adds an audit event in one
+transaction. It preserves the other user's sessions and never reactivates a
+disabled account. Audit failure rolls back all changes. Session revocation
+alone preserves the password and lockout; an active user can sign in again with
+valid credentials. These commands rely on administrator access to the host and
+database rather than a public recovery endpoint.
 
 Run the isolated test suite from this directory:
 
