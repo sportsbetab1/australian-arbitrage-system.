@@ -239,6 +239,15 @@ async def require_authenticated_api(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def prevent_api_caching(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 MONEY_INPUT_FIELDS = {
     "total_stake",
     "stake",
@@ -441,7 +450,7 @@ def setup_authentication(req: AuthSetup):
             503,
             "Account setup is disabled until AUTH_SETUP_TOKEN is configured.",
         )
-    if not hmac.compare_digest(req.setup_token, expected_token):
+    if not hmac.compare_digest(req.setup_token.encode("utf-8"), expected_token.encode("utf-8")):
         raise HTTPException(403, "The setup token is invalid.")
 
     con = db()
@@ -482,28 +491,31 @@ def login(req: AuthLogin, response: Response):
             WHERE username = ?
         """, (username,)).fetchone()
 
-        failed_attempts = int(row["failed_attempts"]) if row else 0
-        if row and row["locked_until"]:
-            if row["locked_until"] > now_text():
-                raise HTTPException(
-                    423,
-                    "This account is temporarily locked after failed sign-in attempts.",
-                )
-            failed_attempts = 0
-            con.execute("""
-                UPDATE auth_users
-                SET failed_attempts = 0, locked_until = NULL
-                WHERE id = ?
-            """, (row["id"],))
-            con.commit()
-
         stored_hash = row["password_hash"] if row else DUMMY_PASSWORD_HASH
+        if row and row["locked_until"] and row["locked_until"] > now_text():
+            raise HTTPException(423, "This account is temporarily locked after failed sign-in attempts.")
         verified = False
         try:
             password_hasher.verify(stored_hash, req.password)
             verified = True
         except (VerifyMismatchError, VerificationError, InvalidHashError):
             verified = False
+
+        # Verify the expensive hash before taking the write lock, then re-read
+        # account state under that lock. Concurrent failures cannot lose counts,
+        # and deactivation/password rotation cannot issue a stale session.
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("""
+            SELECT id, username, display_name, password_hash,
+                   failed_attempts, locked_until, is_active
+            FROM auth_users WHERE username = ?
+        """, (username,)).fetchone()
+        if row and row["locked_until"] and row["locked_until"] > now_text():
+            raise HTTPException(423, "This account is temporarily locked after failed sign-in attempts.")
+        failed_attempts = int(row["failed_attempts"]) if row else 0
+        if row and row["locked_until"]:
+            failed_attempts = 0
+        verified = verified and row is not None and row["password_hash"] == stored_hash
 
         if not row or not row["is_active"] or not verified:
             if row:

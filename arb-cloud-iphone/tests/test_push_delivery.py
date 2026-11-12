@@ -120,3 +120,26 @@ def test_push_delivery_stops_after_max_attempts(delivery_db, monkeypatch):
     assert row["status"] == "dead"
     assert row["attempts"] == push_delivery.MAX_ATTEMPTS
     assert row["last_error"] == "RuntimeError"
+
+
+def test_disabled_user_cannot_receive_new_push_events(delivery_db):
+    with database.get_db() as con:
+        con.execute("UPDATE auth_users SET is_active = 0 WHERE id = ?", (delivery_db,))
+    assert push_delivery.enqueue({"title": "Shared event"}) == 0
+    assert push_delivery.enqueue({"title": "Direct event"}, delivery_db) == 0
+
+
+def test_queued_push_is_discarded_when_recipient_is_disabled(delivery_db, monkeypatch):
+    assert push_delivery.enqueue({"title": "Private event"}, delivery_db) == 1
+    with database.get_db() as con:
+        con.execute("UPDATE auth_users SET is_active = 0 WHERE id = ?", (delivery_db,))
+    sent = []
+    monkeypatch.setattr(push_delivery, "webpush", lambda *args, **kwargs: sent.append(args))
+    result = push_delivery.deliver_due()
+    assert result["sent"] == 0
+    assert result["queued"] == 0
+    assert sent == []
+    with database.get_db() as con:
+        row = con.execute("SELECT status, attempts, last_error FROM push_delivery_queue").fetchone()
+        assert tuple(row) == ("dead", 0, "recipient_inactive")
+

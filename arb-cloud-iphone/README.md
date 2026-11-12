@@ -23,6 +23,20 @@ These values describe the backend constants. They are planning controls, not bal
 
 The dashboard supports Hunta and Jay accounts with Argon2 password hashes, HTTP-only sessions, a one-time first-run setup token, a 12-hour session lifetime, and a 15-minute lock after five failed sign-in attempts. Set a long random `AUTH_SETUP_TOKEN` in the hosting environment before first startup. The token is only for initial setup; password recovery is currently an administrator task.
 
+Concurrent sign-in attempts update failure counts under a serialized database
+transaction. Account status and password hash are rechecked after verification
+before a session is issued. Deactivated users cannot use existing sessions or
+receive newly queued push events; pending deliveries to inactive recipients are
+marked dead when the delivery worker checks them. A delivery already handed to
+the external push provider cannot be recalled. API responses, including sign-in
+errors and CSV reports, use `Cache-Control: no-store`.
+
+Both signed-in users can maintain shared bookmaker records and record either
+person's manually accepted legs; the owner field identifies the bookmaker
+account, not a separate access role. Notifications and push subscriptions remain
+user scoped. Administrator password changes still require explicit session
+revocation in the database; a self-service recovery flow is not implemented.
+
 A qualified candidate exposes the **Open assisted vetting** button. The checklist asks the signed-in person to check the market, rules, outcomes, current odds, commission, limits, and selected accounts. One signed-in person may confirm and record both legs; a second person is not required. The user places both bets manually and, for each accepted leg, records the odds and stake the bookmaker actually accepted. The position calculation and account ledger use those entered accepted values. If actual accepted prices fall below the 1.5% candidate threshold, the system still records the placed legs and flags the lower calculated return so exposure and settlement remain tracked.
 
 If exactly one leg was accepted, **Record one accepted leg as unmatched** stores the exposure, counts it against the cap, marks the rejected leg as not placed, and pauses new positions. One or more later manually placed hedges can be recorded on that position, but each must improve the calculated worst-case return. The app checks recorded balance and exposure. New positions remain paused until all accepted legs settle. The app cannot verify bookmaker acceptance or place the hedge itself.

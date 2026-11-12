@@ -30,13 +30,13 @@ def enqueue_with_connection(con, payload, user_id=None):
     serialized_payload = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     if user_id is None:
         rows = con.execute(
-            "SELECT user_id, subscription_json FROM push_subscriptions "
-            "WHERE user_id IS NOT NULL"
+            "SELECT s.user_id, s.subscription_json FROM push_subscriptions s "
+            "JOIN auth_users u ON u.id = s.user_id WHERE u.is_active = 1"
         ).fetchall()
     else:
         rows = con.execute(
-            "SELECT user_id, subscription_json FROM push_subscriptions "
-            "WHERE user_id = ?",
+            "SELECT s.user_id, s.subscription_json FROM push_subscriptions s "
+            "JOIN auth_users u ON u.id = s.user_id WHERE u.is_active = 1 AND s.user_id = ?",
             (user_id,),
         ).fetchall()
 
@@ -98,6 +98,17 @@ def deliver_due(limit=MAX_BATCH):
         with get_db() as con:
             con.execute("BEGIN IMMEDIATE")
             now = _now()
+            con.execute(
+                """
+                UPDATE push_delivery_queue
+                SET status = 'dead', locked_at = NULL,
+                    last_error = 'recipient_inactive', updated_at = ?
+                WHERE status IN ('pending', 'sending') AND user_id IN (
+                    SELECT id FROM auth_users WHERE is_active = 0
+                )
+                """,
+                (now.isoformat(),),
+            )
             stale_before = (now - timedelta(minutes=5)).isoformat()
             con.execute(
                 """
@@ -213,3 +224,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

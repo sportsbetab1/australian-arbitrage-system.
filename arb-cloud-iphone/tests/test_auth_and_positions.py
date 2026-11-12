@@ -80,6 +80,81 @@ def test_logout_revokes_copied_session_token(client):
     assert client.get("/api/auth/status").json()["authenticated"] is False
 
 
+def test_concurrent_failed_logins_cannot_lose_lockout_counts(client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from types import SimpleNamespace
+    from fastapi import HTTPException, Response
+
+    barrier = Barrier(5)
+    real_hasher = main.password_hasher
+    def fail_verification(*args):
+        barrier.wait(timeout=15)
+        raise main.VerifyMismatchError("Test mismatch")
+    monkeypatch.setattr(main, "password_hasher", SimpleNamespace(verify=fail_verification))
+    def attempt(_):
+        try:
+            main.login(main.AuthLogin(username="hunta", password="incorrect-test-password"), Response())
+        except HTTPException as error:
+            return error.status_code
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        assert list(pool.map(attempt, range(5))) == [401] * 5
+    monkeypatch.setattr(main, "password_hasher", real_hasher)
+    assert login(client).status_code == 423
+    with database.get_db() as con:
+        row = con.execute("SELECT failed_attempts, locked_until FROM auth_users WHERE username = 'hunta'").fetchone()
+        assert row["failed_attempts"] == 5
+        assert row["locked_until"]
+        assert con.execute("SELECT COUNT(*) FROM auth_sessions").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("change", ["deactivate", "rotate_password"])
+def test_account_change_during_password_verification_prevents_session(client, monkeypatch, change):
+    from types import SimpleNamespace
+
+    real_hasher = main.password_hasher
+    def change_during_verification(stored_hash, password):
+        real_hasher.verify(stored_hash, password)
+        with database.get_db() as con:
+            if change == "deactivate":
+                con.execute("UPDATE auth_users SET is_active = 0 WHERE username = 'hunta'")
+            else:
+                con.execute("UPDATE auth_users SET password_hash = ? WHERE username = 'hunta'",
+                            (real_hasher.hash("New-admin-rotated-passphrase"),))
+        return True
+    monkeypatch.setattr(main, "password_hasher", SimpleNamespace(verify=change_during_verification))
+    assert login(client).status_code == 401
+    with database.get_db() as con:
+        assert con.execute("SELECT COUNT(*) FROM auth_sessions").fetchone()[0] == 0
+
+
+def test_deactivation_revokes_access_from_existing_session(client):
+    assert login(client).status_code == 200
+    with database.get_db() as con:
+        con.execute("UPDATE auth_users SET is_active = 0 WHERE username = 'hunta'")
+    assert client.get("/api/accounts").status_code == 401
+    assert client.get("/api/auth/status").json()["authenticated"] is False
+
+
+def test_api_responses_and_auth_errors_are_not_cacheable(client):
+    responses = [client.get("/api/accounts"), client.get("/api/auth/status"),
+                 client.post("/api/auth/login", json={"username": "hunta", "password": "bad"}),
+                 login(client, password="incorrect-test-password")]
+    assert [r.status_code for r in responses] == [401, 200, 403, 401]
+    assert login(client).status_code == 200
+    responses.extend([client.get("/api/accounts"), client.get("/api/reports/settlements.csv")])
+    for response in responses:
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["pragma"] == "no-cache"
+
+
+def test_non_ascii_setup_token_is_rejected_without_server_error(client):
+    response = client.post("/api/auth/setup", headers={"Origin": "http://testserver"}, json={
+        "setup_token": "incorrect-token-🔒", "hunta_password": "Hunta-test-passphrase-2026",
+        "jay_password": "Jay-test-passphrase-2026"})
+    assert response.status_code == 403
+
+
 @pytest.fixture()
 def cashout_position(client, monkeypatch):
     monkeypatch.setattr(main, "send_push", lambda *args, **kwargs: 0)
