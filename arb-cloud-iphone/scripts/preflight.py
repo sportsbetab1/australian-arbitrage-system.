@@ -58,8 +58,9 @@ def inspect_host(db_path, backup_dir=None, environ=None, timestamp=None):
                 users = {row[0] for row in con.execute("SELECT username FROM auth_users WHERE is_active = 1")}
                 dead = con.execute("SELECT COUNT(*) FROM push_delivery_queue WHERE status = 'dead'").fetchone()[0]
             add("database", "pass", "Database schema, quick integrity and foreign-key checks passed.")
-            add("database_permissions", "pass" if private_file(source) else "fail",
-                "Database must be private to its service account; use mode 600 on POSIX or private directory ACLs on Windows.")
+            add("database_permissions", "warn" if os.name != "posix" else ("pass" if private_file(source) else "fail"),
+                "Windows ACL privacy must be verified manually." if os.name != "posix" else
+                "Database must be private to its service account with mode 600.")
             add("push_dead_letters", "warn" if dead else "pass", "Review dead letters in the private dashboard." if dead else "No dead letters.")
         except (OSError, sqlite3.Error):
             add("database", "fail", "Database is unreadable, incomplete, or failed integrity checks.")
@@ -82,6 +83,8 @@ def inspect_host(db_path, backup_dir=None, environ=None, timestamp=None):
                 verify_application(con)
             add("backup", "pass" if private_file(latest) and 0 <= age <= 26 * 3600 else "fail",
                 "Latest snapshot must contain application tables, pass integrity/foreign-key checks, be private, and be less than 26 hours old.")
+            if os.name != "posix":
+                add("backup_permissions", "warn", "Windows snapshot ACL privacy must be verified manually.")
     except (OSError, sqlite3.Error):
         add("backup", "fail", "Latest local snapshot could not be read or verified.")
 
