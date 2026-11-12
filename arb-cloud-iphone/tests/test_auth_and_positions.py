@@ -1266,3 +1266,17 @@ def test_untrusted_forwarded_scheme_cannot_change_origin_validation(client):
     response = client.post("/api/auth/login", headers={"Origin": "https://testserver", "X-Forwarded-Proto": "https"},
                            json={"username": "hunta", "password": "unused"})
     assert response.status_code == 403
+
+
+def test_account_journal_is_append_only(client):
+    import sqlite3
+    from contextlib import closing
+    with closing(database.get_db()) as con, con:
+        account = con.execute("SELECT id FROM accounts LIMIT 1").fetchone()[0]
+        con.execute("INSERT INTO account_transactions(account_id, transaction_type, amount) VALUES (?, 'deposit', 10)", (account,))
+    for statement in ("DELETE FROM account_transactions", "UPDATE account_transactions SET amount = 999",
+                      "INSERT OR REPLACE INTO account_transactions SELECT * FROM account_transactions"):
+        with closing(database.get_db()) as con, con:
+            with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+                con.execute(statement)
+            assert con.execute("SELECT amount FROM account_transactions").fetchone()[0] == 10

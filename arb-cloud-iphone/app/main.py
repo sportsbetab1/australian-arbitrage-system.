@@ -123,6 +123,7 @@ def initialise_system():
             con.execute(
                 "ALTER TABLE account_transactions ADD COLUMN reference_id INTEGER"
             )
+        database_module.protect_journals(con, ("account_transactions",))
         con.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_account_transactions_reference
             ON account_transactions(account_id, transaction_type, reference_id)

@@ -37,6 +37,7 @@ jobs:
             arb-cloud-iphone/tests/test_odds_provider.py
             arb-cloud-iphone/tests/test_manage_auth.py
             arb-cloud-iphone/tests/test_rate_limits.py
+            arb-cloud-iphone/tests/test_storage_integrity.py
             arb-cloud-iphone/pytest.ini
             arb-cloud-iphone/requirements*.txt
 
@@ -55,6 +56,6 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
         working-directory: ${{ runner.temp }}/arbitrage-source
-      - run: python -m pytest tests/test_backup_restore.py tests/test_odds_provider.py tests/test_manage_auth.py tests/test_rate_limits.py -q
+      - run: python -m pytest tests/test_backup_restore.py tests/test_odds_provider.py tests/test_manage_auth.py tests/test_rate_limits.py tests/test_storage_integrity.py -q
         working-directory: ${{ runner.temp }}/arbitrage-source
 

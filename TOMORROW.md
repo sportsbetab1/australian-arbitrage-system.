@@ -4,7 +4,11 @@ The reviewed application is on `main`. The deployment-readiness follow-up adds
 shared authentication/odds request budgets, trusted-proxy origin handling,
 read-only host preflight, and a disposable localhost acceptance check.
 
-Local verification: 103 pytest tests passed. The real localhost smoke command
+The storage follow-up adds private creation of database files, append-only
+journal guards, and stronger preflight checks for actual application snapshots,
+expected owner identities, and POSIX file permissions.
+
+Local verification: 110 pytest tests passed after the storage follow-up. The real localhost smoke command
 passed startup, authentication, rounded qualification, a fictional position and
 settlement, reports, snapshot creation and logout. Compilation and dashboard
 JavaScript syntax checks passed. See the deployment-readiness pull request for
