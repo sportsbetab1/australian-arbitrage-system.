@@ -24,19 +24,34 @@ jobs:
       - run: pytest -q
       - run: python tests/extract_frontend.py
       - run: node --check /tmp/arbitrage-dashboard.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-recovery-source
+          path: |
+            arb-cloud-iphone/app/odds.py
+            arb-cloud-iphone/scripts/*.py
+            arb-cloud-iphone/tests/test_backup_restore.py
+            arb-cloud-iphone/tests/test_odds_provider.py
+            arb-cloud-iphone/pytest.ini
+            arb-cloud-iphone/requirements*.txt
 
   windows-recovery-checks:
+    needs: python-checks
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: arb-cloud-iphone
+        working-directory: ${{ runner.temp }}/arbitrage-source
     steps:
-      - uses: actions/checkout@v4
+      # The repository name ends in a period, so checkout's default Windows
+      # workspace is invalid. Download the tested source to a valid path.
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-recovery-source
+          path: ${{ runner.temp }}/arbitrage-source
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: arb-cloud-iphone/requirements*.txt
+          cache-dependency-path: ${{ runner.temp }}/arbitrage-source/requirements*.txt
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest tests/test_backup_restore.py tests/test_odds_provider.py -q
-
