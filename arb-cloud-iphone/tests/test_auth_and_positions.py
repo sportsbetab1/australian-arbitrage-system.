@@ -1204,3 +1204,33 @@ def test_open_position_cap_is_fifteen_and_is_enforced(client):
     assert client.get("/api/config").json()["concurrent_position_limit"] == 15
     assert any(row["bookmaker"] == "TAB" for row in client.get("/api/accounts").json())
 
+
+
+def test_review_headers_and_connection_cleanup(client, monkeypatch):
+    import sqlite3
+    from fastapi import HTTPException
+    connections = []
+    real_db = main.db
+    def tracked():
+        con = real_db()
+        connections.append(con)
+        return con
+    monkeypatch.setattr(main, "db", tracked)
+    response = client.get("/api/accounts")
+    assert response.status_code == 401
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    main.accounts()
+    with pytest.raises(HTTPException):
+        main.set_opening_balance(-1, main.OpeningBalance(amount=1), None)
+    for con in connections:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            con.execute("SELECT 1")
+
+
+@pytest.mark.parametrize("value", ["yes", "true", 1])
+def test_review_manual_acceptance_requires_actual_boolean(value):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        main.PositionLeg(account_id=1, event_id="e", market_id="m", outcome_id="a",
+                         selection="A", odds=2.1, stake=10, manually_accepted=value)

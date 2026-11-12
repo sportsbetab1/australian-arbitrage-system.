@@ -1,3 +1,4 @@
+from contextlib import closing
 import os
 import sqlite3
 import json
@@ -23,7 +24,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
@@ -84,7 +85,7 @@ def initialise_system():
     init_db()
     migrate_position_schema()
 
-    with db() as con:
+    with closing(db()) as con, con:
         con.executescript("""
         CREATE TABLE IF NOT EXISTS system_config (
             setting TEXT PRIMARY KEY,
@@ -242,6 +243,8 @@ async def require_authenticated_api(request: Request, call_next):
 @app.middleware("http")
 async def prevent_api_caching(request: Request, call_next):
     response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
@@ -274,18 +277,35 @@ class StrictModel(BaseModel):
 
 
 class Outcome(StrictModel):
-    selection: str
-    bookmaker: str
+    selection: str = Field(min_length=1, max_length=200)
+    bookmaker: str = Field(min_length=1, max_length=200)
     odds: float = Field(gt=1.0)
     commission_pct: float = Field(default=0, ge=0, lt=100)
 
+    @field_validator("selection", "bookmaker", mode="before")
+    @classmethod
+    def trim_label(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
 
 class Candidate(StrictModel):
-    sport: str
-    event: str
-    market: str
+    sport: str = Field(min_length=1, max_length=100)
+    event: str = Field(min_length=1, max_length=300)
+    market: str = Field(min_length=1, max_length=300)
     outcomes: List[Outcome] = Field(min_length=2, max_length=3)
     total_stake: float = Field(gt=0)
+
+    @field_validator("sport", "event", "market", mode="before")
+    @classmethod
+    def trim_label(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def distinct_outcomes(self):
+        labels = [outcome.selection.casefold() for outcome in self.outcomes]
+        if len(set(labels)) != len(labels):
+            raise ValueError("Each outcome must have a different selection.")
+        return self
 
 
 class PositionLeg(StrictModel):
@@ -297,7 +317,7 @@ class PositionLeg(StrictModel):
     odds: float = Field(gt=1.0)
     stake: float = Field(gt=0)
     commission_pct: float = Field(default=0, ge=0, lt=100)
-    manually_accepted: bool = False
+    manually_accepted: bool = Field(default=False, strict=True)
 
 
 class OpenPosition(StrictModel):
@@ -308,9 +328,9 @@ class OpenPosition(StrictModel):
     market_id: str = Field(min_length=1)
     market_type: Literal["binary"] = "binary"
     possible_outcomes: List[str] = Field(min_length=2, max_length=2)
-    market_rules_verified: bool
+    market_rules_verified: bool = Field(strict=True)
     legs: List[PositionLeg] = Field(min_length=2, max_length=2)
-    manual_confirmation: bool
+    manual_confirmation: bool = Field(strict=True)
     notes: str = ""
 
 
@@ -320,8 +340,8 @@ class RecordHedge(StrictModel):
     selection: str = Field(min_length=1)
     odds: float = Field(gt=1.0)
     stake: float = Field(gt=0)
-    manual_confirmation: bool
-    manually_accepted: bool
+    manual_confirmation: bool = Field(strict=True)
+    manually_accepted: bool = Field(strict=True)
     notes: str = Field(default="", max_length=500)
 
 
@@ -628,6 +648,7 @@ def calculate(candidate: Candidate):
     return {
         "sum_inverse": inverse_sum,
         "roi": roi,
+        "net_roi": (payout - candidate.total_stake) / candidate.total_stake,
         "stakes": stakes,
         "equalised_payout": payout,
         "profit": payout - candidate.total_stake,
@@ -882,7 +903,7 @@ def config():
 
 @app.get("/api/accounts")
 def accounts():
-    with db() as con:
+    with closing(db()) as con, con:
         rows = con.execute("""
             SELECT
                 accounts.id, accounts.owner, accounts.bookmaker,
@@ -900,7 +921,7 @@ def accounts():
 
 @app.post("/api/accounts/{account_id}/opening-balance")
 def set_opening_balance(account_id: int, req: OpeningBalance, request: Request):
-    with db() as con:
+    with closing(db()) as con, con:
         con.execute("BEGIN IMMEDIATE")
         account = con.execute(
             "SELECT id, opening_balance FROM accounts WHERE id = ?",
@@ -939,7 +960,7 @@ def set_opening_balance(account_id: int, req: OpeningBalance, request: Request):
 
 @app.post("/api/accounts/{account_id}/transactions")
 def record_account_transaction(account_id: int, req: AccountTransaction, request: Request):
-    with db() as con:
+    with closing(db()) as con, con:
         con.execute("BEGIN IMMEDIATE")
         account = con.execute(
             "SELECT id FROM accounts WHERE id = ?",
@@ -980,7 +1001,7 @@ def reconcile_account_balance(
     reason = req.reason.strip()
     if not reason:
         raise HTTPException(400, "A reconciliation reason is required.")
-    with db() as con:
+    with closing(db()) as con, con:
         con.execute("BEGIN IMMEDIATE")
         account = con.execute(
             "SELECT id FROM accounts WHERE id = ?",
@@ -1072,7 +1093,7 @@ def create_manual_backup(request: Request):
     except (OSError, ValueError, sqlite3.DatabaseError) as error:
         raise HTTPException(500, f"Backup failed: {error}") from None
 
-    with db() as con:
+    with closing(db()) as con, con:
         con.execute(
             "INSERT INTO audit_log(action, details) VALUES (?, ?)",
             (
@@ -1094,7 +1115,7 @@ def create_manual_backup(request: Request):
 
 @app.get("/api/dashboard")
 def dashboard():
-    with db() as con:
+    with closing(db()) as con, con:
         exposure = get_open_exposure(con)
         buffer = get_buffer_state(con)
 
@@ -1153,7 +1174,7 @@ def dashboard():
 def scan(candidate: Candidate):
     result = calculate(candidate)
 
-    if result["roi"] < MIN_NET_ROI:
+    if result["net_roi"] < MIN_NET_ROI or min(result["stakes"]) <= 0:
         return {
             "qualified": False,
             "reason": "Below 1.5% minimum calculated net ROI",
@@ -1164,7 +1185,7 @@ def scan(candidate: Candidate):
     opportunity_id = str(uuid.uuid4())
     data = candidate.model_dump()
 
-    with db() as con:
+    with closing(db()) as con, con:
         con.execute("""
             INSERT INTO opportunities
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1236,11 +1257,11 @@ def scan_live_odds(sport_key: str):
         }
         candidate = Candidate(**candidate_data)
         result = calculate(candidate)
-        if result["roi"] < MIN_NET_ROI:
+        if result["net_roi"] < MIN_NET_ROI or min(result["stakes"]) <= 0:
             continue
 
         opportunity_id = str(uuid.uuid4())
-        with db() as con:
+        with closing(db()) as con, con:
             con.execute("""
                 INSERT INTO opportunities
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1283,7 +1304,7 @@ def scan_live_odds(sport_key: str):
 
 @app.get("/api/opportunities")
 def opportunities():
-    with db() as con:
+    with closing(db()) as con, con:
         rows = con.execute("""
             SELECT *
             FROM opportunities
@@ -1346,7 +1367,7 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
         if leg.market_id != req.market_id:
             raise HTTPException(400, "Leg market IDs do not match.")
 
-    with db() as con:
+    with closing(db()) as con, con:
         con.execute("BEGIN IMMEDIATE")
         account_ids = [leg.account_id for leg in req.legs]
 
@@ -1536,7 +1557,7 @@ def record_position_hedge(position_id: int, req: RecordHedge, request: Request):
             "Confirm that the hedge was manually placed and accepted before recording it.",
         )
 
-    with db() as con:
+    with closing(db()) as con, con:
         con.execute("BEGIN IMMEDIATE")
         position = con.execute(
             "SELECT * FROM positions WHERE id = ?",
@@ -1730,7 +1751,7 @@ def create_user_notifications(con, event_type, position_id, title, message):
 @app.get("/api/notifications")
 def list_notifications(request: Request):
     user_id = request.state.auth_user["id"]
-    with db() as con:
+    with closing(db()) as con, con:
         rows = con.execute(
             """
             SELECT id, event_type, position_id, title, message, created_at, read_at
@@ -1751,7 +1772,7 @@ def list_notifications(request: Request):
 @app.post("/api/notifications/{notification_id}/read")
 def mark_notification_read(notification_id: int, request: Request):
     user_id = request.state.auth_user["id"]
-    with db() as con:
+    with closing(db()) as con, con:
         cursor = con.execute(
             """
             UPDATE user_notifications
@@ -1777,7 +1798,7 @@ def mark_notification_read(notification_id: int, request: Request):
 
 @app.get("/api/reports/summary")
 def reports_summary():
-    with db() as con:
+    with closing(db()) as con, con:
         totals = con.execute("""
             SELECT
                 COUNT(*) AS all_positions,
@@ -1825,7 +1846,7 @@ def csv_safe_cell(value):
 
 @app.get("/api/reports/settlements.csv")
 def settlements_csv():
-    with db() as con:
+    with closing(db()) as con, con:
         rows = con.execute("""
             SELECT p.id, p.settled_at, p.sport, p.event, p.market,
                    p.total_stake, p.expected_roi, p.actual_pnl,
@@ -1855,7 +1876,7 @@ def settlements_csv():
 
 @app.get("/api/positions")
 def positions():
-    with db() as con:
+    with closing(db()) as con, con:
         rows = con.execute("""
             SELECT *
             FROM positions
@@ -1899,7 +1920,7 @@ def cashout_leg(position_id: int, leg_id: int, req: CashoutLeg, request: Request
 
 
 def close_position_leg(position_id, leg_id, req, request, close_type):
-    with db() as con:
+    with closing(db()) as con, con:
         # Serialize concurrent settlement requests before checking the settled flag.
         con.execute("BEGIN IMMEDIATE")
         position = con.execute("""
@@ -2076,7 +2097,7 @@ def close_position_leg(position_id, leg_id, req, request, close_type):
 
 @app.get("/api/buffer")
 def buffer_status():
-    with db() as con:
+    with closing(db()) as con, con:
         state = get_buffer_state(con)
 
         rows = con.execute("""
@@ -2094,7 +2115,7 @@ def buffer_status():
 
 @app.post("/api/buffer/commit")
 def commit_buffer(req: BufferCommit):
-    with db() as con:
+    with closing(db()) as con, con:
         state = get_buffer_state(con)
 
         if state["overdue_items"] > 0:
@@ -2156,7 +2177,7 @@ def commit_buffer(req: BufferCommit):
 
 @app.post("/api/buffer/{entry_id}/resolve")
 def resolve_buffer(entry_id: int, req: BufferResolve):
-    with db() as con:
+    with closing(db()) as con, con:
         row = con.execute("""
             SELECT *
             FROM buffer_ledger
@@ -2206,7 +2227,7 @@ def resolve_buffer(entry_id: int, req: BufferResolve):
 
 @app.get("/api/sets")
 def sets():
-    with db() as con:
+    with closing(db()) as con, con:
         rows = con.execute("""
             SELECT *
             FROM sets
@@ -2305,7 +2326,7 @@ def subscribe(req: PushSub, request: Request):
     if len(subscription_json.encode("utf-8")) > 8192:
         raise HTTPException(400, "Push subscription data is too large.")
     user_id = request.state.auth_user["id"]
-    with db() as con:
+    with closing(db()) as con, con:
         con.execute("""
             INSERT INTO push_subscriptions (user_id, subscription_json)
             VALUES (?, ?)

@@ -3,6 +3,7 @@
 Run `python -m app.push_delivery` from the app directory on a scheduler to
 retry deliveries that failed after their initial API request.
 """
+from contextlib import closing
 import argparse
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -67,7 +68,7 @@ def enqueue_with_connection(con, payload, user_id=None):
 
 
 def enqueue(payload, user_id=None):
-    with get_db() as con:
+    with closing(get_db()) as con, con:
         con.execute("BEGIN IMMEDIATE")
         return enqueue_with_connection(con, payload, user_id=user_id)
 
@@ -84,7 +85,7 @@ def deliver_due(limit=MAX_BATCH):
     public_key = os.getenv("VAPID_PUBLIC_KEY")
     private_key = os.getenv("VAPID_PRIVATE_KEY")
     if not public_key or not private_key:
-        with get_db() as con:
+        with closing(get_db()) as con, con:
             queued = con.execute(
                 "SELECT COUNT(*) AS queued FROM push_delivery_queue "
                 "WHERE status IN ('pending', 'sending')"
@@ -95,7 +96,7 @@ def deliver_due(limit=MAX_BATCH):
     sent = failed = 0
 
     for _ in range(limit):
-        with get_db() as con:
+        with closing(get_db()) as con, con:
             con.execute("BEGIN IMMEDIATE")
             now = _now()
             con.execute(
@@ -152,7 +153,7 @@ def deliver_due(limit=MAX_BATCH):
             retryable = attempt < MAX_ATTEMPTS
             delay_seconds = min(30 * (2 ** min(attempt - 1, 10)), 6 * 60 * 60)
             next_attempt = (_now() + timedelta(seconds=delay_seconds)).isoformat()
-            with get_db() as con:
+            with closing(get_db()) as con, con:
                 con.execute(
                     """
                     UPDATE push_delivery_queue
@@ -170,7 +171,7 @@ def deliver_due(limit=MAX_BATCH):
                 )
         else:
             sent += 1
-            with get_db() as con:
+            with closing(get_db()) as con, con:
                 con.execute(
                     """
                     UPDATE push_delivery_queue
@@ -181,7 +182,7 @@ def deliver_due(limit=MAX_BATCH):
                     (_now_text(), _now_text(), row["id"]),
                 )
 
-    with get_db() as con:
+    with closing(get_db()) as con, con:
         counts = con.execute(
             """
             SELECT COUNT(*) AS queued
@@ -193,7 +194,7 @@ def deliver_due(limit=MAX_BATCH):
 
 
 def delivery_status():
-    with get_db() as con:
+    with closing(get_db()) as con, con:
         rows = con.execute(
             "SELECT status, COUNT(*) AS total FROM push_delivery_queue GROUP BY status"
         ).fetchall()
