@@ -7,6 +7,8 @@
 __pycache__/
 *.py[cod]
 .venv/
+.test-deps/
+.pytest_cache/
 venv/
 
 # Local databases and backups
@@ -17,3 +19,4 @@ venv/
 # Local development files
 .DS_Store
 .vscode/
+

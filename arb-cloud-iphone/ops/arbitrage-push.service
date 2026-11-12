@@ -1,0 +1,12 @@
+[Unit]
+Description=Retry arbitrage push outbox
+
+[Service]
+Type=oneshot
+User=arbitrage
+WorkingDirectory=/opt/arbitrage/arb-cloud-iphone
+EnvironmentFile=/etc/arbitrage.env
+UMask=0077
+ExecStart=/opt/arbitrage/arb-cloud-iphone/.venv/bin/python -m app.push_delivery --limit 100
+NoNewPrivileges=true
+PrivateTmp=true

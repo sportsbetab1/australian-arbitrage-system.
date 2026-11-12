@@ -35,6 +35,27 @@ def init_db():
         subscription_json TEXT UNIQUE
     );
 
+    CREATE TABLE IF NOT EXISTS push_delivery_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        subscription_json TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending', 'sending', 'sent', 'dead')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        locked_at TEXT,
+        sent_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_push_delivery_due
+    ON push_delivery_queue(status, next_attempt_at, id);
+
     CREATE TABLE IF NOT EXISTS accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         owner TEXT NOT NULL CHECK(owner IN ('Hunta', 'Jay')),
@@ -113,6 +134,45 @@ def init_db():
         details TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS auth_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        display_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        failed_attempts INTEGER NOT NULL DEFAULT 0,
+        locked_until TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_login TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry
+    ON auth_sessions(expires_at);
+
+    CREATE TABLE IF NOT EXISTS user_notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        position_id INTEGER,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        read_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE,
+        FOREIGN KEY(position_id) REFERENCES positions(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_notifications_unread
+    ON user_notifications(user_id, read_at, created_at);
     """)
 
     bookmakers = [
@@ -122,7 +182,8 @@ def init_db():
         "Unibet",
         "Dabble",
         "Picklebet",
-        "Ladbrokes"
+        "Ladbrokes",
+        "TAB"
     ]
 
     for owner in ("Hunta", "Jay"):
@@ -135,6 +196,17 @@ def init_db():
                 """,
                 (owner, bookmaker)
             )
+
+    subscription_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(push_subscriptions)")
+    }
+    if "user_id" not in subscription_columns:
+        conn.execute(
+            "ALTER TABLE push_subscriptions ADD COLUMN user_id INTEGER REFERENCES auth_users(id) ON DELETE CASCADE"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id)"
+    )
 
     conn.commit()
     conn.close()
@@ -161,6 +233,7 @@ def migrate_position_schema():
             "outcome_id": "TEXT",
             "commission_pct": "REAL NOT NULL DEFAULT 0",
             "commission_paid": "REAL NOT NULL DEFAULT 0",
+            "close_type": "TEXT",
         },
     }
 
@@ -188,3 +261,4 @@ def migrate_position_schema():
 
     finally:
         conn.close()
+
