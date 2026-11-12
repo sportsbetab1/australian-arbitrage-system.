@@ -1,0 +1,12 @@
+[Unit]
+Description=Verified arbitrage SQLite backup
+
+[Service]
+Type=oneshot
+User=arbitrage
+WorkingDirectory=/opt/arbitrage/arb-cloud-iphone
+EnvironmentFile=/etc/arbitrage.env
+UMask=0077
+ExecStart=/opt/arbitrage/arb-cloud-iphone/.venv/bin/python -m scripts.backup_db
+NoNewPrivileges=true
+PrivateTmp=true

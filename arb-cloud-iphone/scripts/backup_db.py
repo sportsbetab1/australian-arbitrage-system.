@@ -24,15 +24,21 @@ def create_backup(db_path, backup_dir=None, keep=14):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     target = target_dir / f"arbitrage-{stamp}-{uuid.uuid4().hex[:8]}.sqlite"
     temporary = target.with_suffix(".sqlite.tmp")
+    temporary_created = False
 
     try:
-        with closing(sqlite3.connect(source)) as src, closing(sqlite3.connect(temporary)) as dst:
+        # Exclusive creation prevents accidental clobbering; private permissions
+        # protect password hashes, session hashes, and financial history.
+        descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        temporary_created = True
+        os.close(descriptor)
+        with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src, closing(sqlite3.connect(temporary)) as dst:
             src.backup(dst)
         if not _integrity_ok(temporary):
             raise sqlite3.DatabaseError("Backup integrity check failed.")
         os.replace(temporary, target)
     finally:
-        if temporary.exists():
+        if temporary_created and temporary.exists():
             temporary.unlink()
 
     if keep is not None:
