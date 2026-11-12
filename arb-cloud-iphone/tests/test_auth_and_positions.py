@@ -1234,3 +1234,35 @@ def test_review_manual_acceptance_requires_actual_boolean(value):
     with pytest.raises(ValidationError):
         main.PositionLeg(account_id=1, event_id="e", market_id="m", outcome_id="a",
                          selection="A", odds=2.1, stake=10, manually_accepted=value)
+
+
+def test_auth_throttling_precedes_password_hashing(client, monkeypatch):
+    from app import rate_limits
+    calls = []
+    def consume(scope, identity, limit):
+        calls.append(scope)
+        return 17 if scope == "auth-global" else 0
+    monkeypatch.setattr(rate_limits, "consume", consume)
+    from types import SimpleNamespace
+    monkeypatch.setattr(main, "password_hasher", SimpleNamespace(verify=lambda *args: pytest.fail("Throttled request verified a password")))
+    response = login(client)
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "17"
+    assert response.headers["cache-control"] == "no-store"
+    assert calls == ["auth-global"]
+
+
+def test_odds_throttling_requires_auth_and_never_calls_provider(client, monkeypatch):
+    assert client.get("/api/odds/sports").status_code == 401
+    assert login(client).status_code == 200
+    monkeypatch.setattr(main.rate_limits, "consume", lambda *args: 23)
+    monkeypatch.setattr(main, "fetch_json", lambda *args, **kwargs: pytest.fail("Throttled request called provider"))
+    response = client.get("/api/odds/sports")
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "23"
+
+
+def test_untrusted_forwarded_scheme_cannot_change_origin_validation(client):
+    response = client.post("/api/auth/login", headers={"Origin": "https://testserver", "X-Forwarded-Proto": "https"},
+                           json={"username": "hunta", "password": "unused"})
+    assert response.status_code == 403

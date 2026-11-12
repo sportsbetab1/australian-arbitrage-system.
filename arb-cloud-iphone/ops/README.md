@@ -1,5 +1,46 @@
 # Recovery and scheduled operations
 
+## Host preflight and acceptance
+
+Run `python -m scripts.preflight` with the host's private environment loaded.
+It opens the existing database read-only, checks the schema, quick integrity,
+foreign keys, active accounts, secure-cookie configuration, and the newest
+local snapshot's integrity and age (maximum 26 hours). It prints sanitized JSON
+and exits nonzero for failed checks. Warnings identify optional disabled
+integrations and operations that cannot be verified locally. `ok: true` means
+these local checks passed; it is not production approval. It does not prove
+provider access, backup content equivalence, off-site protection or delivery.
+Run it after account setup and the first backup, and include it in host
+monitoring. Missing databases are reported without being created.
+
+With development requirements installed, `python -m scripts.smoke_local` starts
+a temporary server on localhost with generated test-only credentials and a
+disposable database. It verifies private access, setup/sign-in, rounded-stake
+qualification, a fictional position and settlement, P/L, backup and logout.
+It shuts the server down and removes its data afterward. It never uses the
+operating database or calls a live odds/push/bookmaker service. This command is
+also run by Linux CI. Rehearse real-host HTTPS, proxy configuration, sign-in,
+backups and phone delivery separately before opening access.
+
+## Request budgets and proxy trust
+
+Authentication POSTs share a 60-request/minute global budget and a
+20-request/minute client budget. Both setup and sign-in count, including
+invalid inputs. Authenticated odds requests share a 10-request/minute budget
+per user. Counters are serialized in SQLite across workers, expire after each
+fixed minute, and store hashed identities rather than raw IP addresses. A 429
+response includes `Retry-After` and is not cached. Fixed windows can allow a
+burst across a minute boundary. These limits supplement account lockout;
+configure edge connection/body limits and monitoring as well.
+
+Client identity and request scheme come from the ASGI scope. Configure
+Uvicorn's `--forwarded-allow-ips` with the actual trusted reverse proxy addresses
+on the selected host, and make the application port inaccessible directly.
+Do not use `*` unless the platform guarantees only its trusted proxy can reach
+the port. Raw forwarded headers do not override origin checks inside the app.
+An incorrect proxy configuration can group clients into one budget or reject
+legitimate HTTPS requests; verify it on the chosen host.
+
 These templates are prepared for a Linux host with systemd. They are not
 installed or enabled by the application. No hosting service is provisioned.
 Both jobs must run on the same host/volume as the application database; a

@@ -52,6 +52,10 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 - Settlement summary and CSV export are available in the authenticated dashboard.
 - The authenticated dashboard can create and list integrity-checked SQLite snapshots; the restore script validates its source and preserves a pre-restore safety copy. An isolated restore drill and Linux scheduler templates are available in [the operations guide](ops/README.md). Backups remain manual until a host administrator enables scheduling. Off-site storage and a production restore drill remain outstanding.
 - Self-service password recovery, monitoring, and production readiness work remain outstanding.
+- Shared SQLite request budgets protect authentication and odds endpoints;
+  host preflight and isolated server acceptance commands are documented in
+  [the operations guide](ops/README.md). Edge throttling, proxy trust and
+  actual host monitoring still require deployment configuration.
 - Do not deploy this branch for real-money use. It is under development and no deployment is performed by the repository checks.
 
 ## Development
