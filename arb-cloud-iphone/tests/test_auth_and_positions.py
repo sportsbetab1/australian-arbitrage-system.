@@ -71,6 +71,15 @@ def test_mutating_api_rejects_missing_or_cross_origin_origin(client):
     assert malformed_origin.status_code == 403
 
 
+def test_logout_revokes_copied_session_token(client):
+    response = login(client)
+    token = response.cookies[main.AUTH_COOKIE_NAME]
+    assert client.post("/api/auth/logout", headers={"Origin": "http://testserver"}).status_code == 200
+    client.cookies.set(main.AUTH_COOKIE_NAME, token)
+    assert client.get("/api/accounts").status_code == 401
+    assert client.get("/api/auth/status").json()["authenticated"] is False
+
+
 def test_expired_login_lockout_resets_failed_attempts(client):
     con = database.get_db()
     try:
@@ -965,3 +974,4 @@ def test_open_position_cap_is_fifteen_and_is_enforced(client):
 
     assert client.get("/api/config").json()["concurrent_position_limit"] == 15
     assert any(row["bookmaker"] == "TAB" for row in client.get("/api/accounts").json())
+

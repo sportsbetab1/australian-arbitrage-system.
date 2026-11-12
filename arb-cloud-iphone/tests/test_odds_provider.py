@@ -108,3 +108,47 @@ def test_fetch_json_requires_a_configured_key():
     with pytest.raises(OddsProviderError) as error:
         fetch_json("", "sports")
     assert error.value.status_code == 503
+
+
+@pytest.mark.parametrize("price", [float("nan"), float("inf"), float("-inf"), "NaN", "Infinity"])
+def test_nonfinite_prices_cannot_replace_valid_quotes(price):
+    now = datetime.now(timezone.utc)
+    event = event_fixture(now.isoformat())
+    event["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = price
+    candidates = build_h2h_candidates([event], now=now)
+    assert len(candidates) == 1
+    home = next(item for item in candidates[0]["outcomes"] if item["selection"] == "Home")
+    assert home["bookmaker"] == "Betfair"
+    assert home["odds"] == 2.2
+
+
+@pytest.mark.parametrize("names", [["Home", "Draw", "Other"], ["X", "Y", "Z"]])
+def test_wrong_team_labels_are_not_a_complete_market(names):
+    now = datetime.now(timezone.utc)
+    event = event_fixture(now.isoformat())
+    for book in event["bookmakers"]:
+        for outcome, name in zip(book["markets"][0]["outcomes"], names):
+            outcome["name"] = name
+    assert build_h2h_candidates([event], now=now) == []
+
+
+def test_duplicate_labels_do_not_supply_a_quote():
+    now = datetime.now(timezone.utc)
+    event = event_fixture(now.isoformat())
+    event["bookmakers"] = event["bookmakers"][:1]
+    event["bookmakers"][0]["markets"][0]["outcomes"].append({"name": "Home", "price": 9.0})
+    assert build_h2h_candidates([event], now=now) == []
+
+
+def test_binary_market_requires_both_event_teams():
+    now = datetime.now(timezone.utc)
+    event = event_fixture(now.isoformat())
+    event["sport_key"] = "tennis_atp"
+    for book in event["bookmakers"]:
+        book["markets"][0]["outcomes"] = [
+            item for item in book["markets"][0]["outcomes"] if item["name"] != "Draw"
+        ]
+    assert len(build_h2h_candidates([event], now=now)) == 1
+    event["away_team"] = "Other"
+    assert build_h2h_candidates([event], now=now) == []
+

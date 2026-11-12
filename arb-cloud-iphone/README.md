@@ -42,6 +42,10 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 
 ## Development
 
+The Render blueprint uses `arb-cloud-iphone` as its repository root directory
+and `/api/health` for its health check. It is configuration only; applying it
+still requires a separate hosting deployment.
+
 Python 3.11+:
 
 ```bash
@@ -92,3 +96,21 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 7. Complete a security and recovery review before any deployment.
 
 Horse racing is a later phase and needs separate handling for dead heats, deductions, non-runners, starting-price/fixed-odds differences, and place terms.
+
+## Feed and recovery validation
+
+Feed quotes must contain the event's home and away teams (plus Draw for soccer),
+with no duplicate or unexpected selection labels. Nonfinite prices are ignored;
+an event is omitted if a valid price cannot be found for every expected outcome.
+Freshness checks and manual settlement-rule verification still apply.
+
+Backup and restore scripts explicitly close every SQLite connection before
+renaming snapshot files. Stop the application and any database writers before
+restoring. Restore failures preserve the original database and a pre-restore
+safety copy, and remove the temporary restore file. Run a restore drill against
+an isolated copy before relying on the process in production.
+
+CI includes Windows backup/restore and feed tests alongside the complete Linux
+suite. Session regressions cover expiry, logout token revocation, lockout, and
+rejection of repeated first-run setup.
+

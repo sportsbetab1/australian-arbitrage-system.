@@ -1,4 +1,5 @@
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -7,7 +8,7 @@ import uuid
 
 
 def _integrity_ok(path: Path) -> bool:
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         result = connection.execute("PRAGMA integrity_check").fetchone()[0]
     return result == "ok"
 
@@ -25,7 +26,7 @@ def create_backup(db_path, backup_dir=None, keep=14):
     temporary = target.with_suffix(".sqlite.tmp")
 
     try:
-        with sqlite3.connect(source) as src, sqlite3.connect(temporary) as dst:
+        with closing(sqlite3.connect(source)) as src, closing(sqlite3.connect(temporary)) as dst:
             src.backup(dst)
         if not _integrity_ok(temporary):
             raise sqlite3.DatabaseError("Backup integrity check failed.")
@@ -57,3 +58,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

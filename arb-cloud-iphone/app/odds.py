@@ -3,6 +3,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import json
+import math
 
 
 class OddsProviderError(Exception):
@@ -65,20 +66,27 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
     now = now or datetime.now(timezone.utc)
     candidates = []
     for event in events:
+        home = str(event.get("home_team") or "").strip()
+        away = str(event.get("away_team") or "").strip()
+        if not home or not away or home == away:
+            continue
+        expected_outcomes = {home, away}
+        if str(event.get("sport_key", "")).startswith("soccer_"):
+            expected_outcomes.add("Draw")
+        if len(expected_outcomes) != (3 if str(event.get("sport_key", "")).startswith("soccer_") else 2):
+            continue
         commence = _market_updated_at(event.get("commence_time"))
         if commence is None or commence <= now:
             continue
         best = {}
-        possible_outcomes = set()
         for bookmaker in event.get("bookmakers", []):
             for market in bookmaker.get("markets", []):
                 if market.get("key") != "h2h":
                     continue
-                possible_outcomes.update(
-                    str(item.get("name", "")).strip()
-                    for item in market.get("outcomes", [])
-                    if str(item.get("name", "")).strip()
-                )
+                labels = [str(item.get("name", "")).strip() for item in market.get("outcomes", [])]
+                # Use only complete, unambiguous quotes for this event's teams.
+                if len(labels) != len(expected_outcomes) or set(labels) != expected_outcomes:
+                    continue
                 updated = _market_updated_at(market.get("last_update"))
                 if updated is None:
                     continue
@@ -95,7 +103,7 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
                         price = float(outcome.get("price"))
                     except (TypeError, ValueError):
                         continue
-                    if not name or price <= 1:
+                    if not name or not math.isfinite(price) or price <= 1:
                         continue
                     effective_price = 1 + (price - 1) * (1 - commission / 100)
                     item = {
@@ -111,8 +119,7 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
                         best[name] = item
 
         outcomes = list(best.values())
-        expected_count = 3 if str(event.get("sport_key", "")).startswith("soccer_") else 2
-        if len(outcomes) != expected_count or set(best) != possible_outcomes:
+        if set(best) != expected_outcomes:
             continue
         candidates.append({
             "sport": event.get("sport_title") or event.get("sport_key") or "Unknown sport",
@@ -127,3 +134,4 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
             "source_updated_at": min(outcome["updated_at"] for outcome in outcomes),
         })
     return candidates
+
