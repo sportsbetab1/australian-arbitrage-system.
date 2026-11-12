@@ -44,16 +44,19 @@ small{font-size:11px;color:#728294}.hidden{display:none}
  <div id="result"></div>
 </div>
 <div class="section">Open sets</div><div class="card" id="sets">Loading…</div>
+<p><a href="/api/reports/sets.csv">Download ledger CSV</a></p>
 <div class="section">Recent opportunities</div><div class="card" id="opps">Loading…</div>
 <div class="warn">Important: the scanner is a decision-support tool, not a guarantee. Verify identical markets, all outcomes, current odds, account limits and settlement rules. A recorded set does not place bets.</div>
 <script>
 let legCount=2, lastOpportunity=null;
+function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function addLeg(){if(legCount>=3)return;legCount++;renderLegs()}
 function renderLegs(){
- const el=document.getElementById('legs');el.innerHTML='';
+ const el=document.getElementById('legs');const saved={};el.querySelectorAll('input').forEach(x=>saved[x.id]=x.value);el.innerHTML='';
  for(let i=1;i<=legCount;i++){
   const d=document.createElement('div');d.innerHTML=`<div class="section">Outcome ${i}</div><label>Selection</label><input id="sel${i}" value="${i===1?'Home':i===2?'Away':'Draw'}"><label>Bookmaker</label><input id="book${i}" value="${i===1?'Bookmaker A':i===2?'Bookmaker B':'Bookmaker C'}"><label>Decimal odds</label><input id="odds${i}" type="number" min="1.01" step="0.01" value="${i===1?'2.10':i===2?'2.05':'3.50'}"><label>Commission % (if applicable)</label><input id="comm${i}" type="number" min="0" max="99" step="0.1" value="0">`;el.appendChild(d)
  }
+ el.querySelectorAll('input').forEach(x=>{if(x.id in saved)x.value=saved[x.id]});
 }
 async function api(path,opts={}){let r=await fetch('/api'+path,{headers:{'Content-Type':'application/json'},...opts});let j=await r.json();if(!r.ok)throw Error(j.detail||'Request failed');return j}
 async function refresh(){
@@ -64,8 +67,8 @@ async function refresh(){
   document.getElementById('exposure').textContent='$'+s.open_exposure.toLocaleString();
   document.getElementById('active').textContent=s.open_sets+' / '+c.max_open_sets;
   document.getElementById('capacity').textContent='$'+s.remaining_exposure.toLocaleString();
-  document.getElementById('sets').innerHTML=s.items.filter(x=>x.status==='Open').map(x=>`<div class="item"><b>${x.sport}: ${x.event}</b><div class="muted">${x.market} • $${x.total_stake} • ${(x.roi*100).toFixed(2)}% theoretical</div><button class="secondary" onclick="settle('${x.id}')">Record settlement</button></div>`).join('')||'<small>No open sets.</small>';
-  document.getElementById('opps').innerHTML=o.map(x=>`<div class="item"><b>${x.sport}: ${x.event}</b><div class="muted">${x.market} • ${(x.roi*100).toFixed(2)}% • ${x.status}</div></div>`).join('')||'<small>No opportunities yet.</small>';
+  document.getElementById('sets').innerHTML=s.items.filter(x=>x.status==='Open').map(x=>`<div class="item"><b>${escapeHtml(x.sport)}: ${escapeHtml(x.event)}</b><div class="muted">${escapeHtml(x.market)} • $${x.total_stake} • ${(x.roi*100).toFixed(2)}% theoretical</div><button class="secondary" onclick="settle('${x.id}')">Record settlement</button></div>`).join('')||'<small>No open sets.</small>';
+  document.getElementById('opps').innerHTML=o.map(x=>`<div class="item"><b>${escapeHtml(x.sport)}: ${escapeHtml(x.event)}</b><div class="muted">${escapeHtml(x.market)} • ${(x.roi*100).toFixed(2)}% • ${escapeHtml(x.status)}</div></div>`).join('')||'<small>No opportunities yet.</small>';
  }catch(e){document.getElementById('status').textContent='API unavailable'}
 }
 async function scan(){
@@ -74,17 +77,18 @@ async function scan(){
   const x=await api('/scan',{method:'POST',body:JSON.stringify({sport:document.getElementById('sport').value,event:document.getElementById('event').value,market:document.getElementById('market').value,outcomes,total_stake:500})});
   lastOpportunity=x;
   let html=`<div class="item"><b>${x.qualified?'Potential arbitrage':'Does not qualify'}</b><div>Net theoretical ROI: ${(x.roi*100).toFixed(2)}%</div><div>Estimated theoretical profit: $${x.profit.toFixed(2)}</div>`;
-  x.stakes.forEach((v,i)=>html+=`<div>${outcomes[i].selection} at ${outcomes[i].bookmaker}: <b>$${v.toFixed(2)}</b></div>`);
-  if(x.qualified)html+=`<button style="margin-top:10px" onclick="openSet('${x.opportunity_id}')">I have manually verified and placed both legs — record $500 set</button>`;
+  x.stakes.forEach((v,i)=>html+=`<div>${escapeHtml(outcomes[i].selection)} at ${escapeHtml(outcomes[i].bookmaker)}: <b>$${v.toFixed(2)}</b></div>`);
+  if(x.qualified)html+=`<button style="margin-top:10px" onclick="openSet('${x.opportunity_id}')">I have manually verified and placed all outcomes — record $500 set</button>`;
   html+='</div>';document.getElementById('result').innerHTML=html;refresh();
  }catch(e){document.getElementById('result').textContent=e.message}
 }
 async function openSet(id){
- if(!confirm('Confirm: have you independently verified and successfully placed BOTH legs? This only records exposure; it does not place bets.'))return;
- try{await api('/sets/open',{method:'POST',body:JSON.stringify({opportunity_id:id,manual_confirmation:true,notes:'User confirmed both legs placed manually.'})});refresh()}catch(e){alert(e.message)}
+ if(!confirm('Confirm: have you independently verified and successfully placed ALL outcomes? This only records exposure; it does not place bets.'))return;
+ try{await api('/sets/open',{method:'POST',body:JSON.stringify({opportunity_id:id,manual_confirmation:true,notes:'User confirmed all outcomes placed manually.'})});refresh()}catch(e){alert(e.message)}
 }
 async function settle(id){
  const pnl=prompt('Enter actual net profit/loss in AUD (e.g. 8.50 or -500):');if(pnl===null)return;
+ if(!pnl.trim()||!Number.isFinite(Number(pnl))){alert('Enter a valid profit or loss.');return}
  try{await api('/sets/'+id+'/settle',{method:'POST',body:JSON.stringify({actual_pnl:Number(pnl),notes:'Settled manually'})});refresh()}catch(e){alert(e.message)}
 }
 async function enablePush(){
@@ -100,3 +104,6 @@ async function enablePush(){
 }
 renderLegs();refresh();setInterval(refresh,15000);
 </script></body></html>
+
+
+

@@ -35,6 +35,15 @@ uvicorn app.main:app --reload
 Open http://127.0.0.1:8000. API docs: http://127.0.0.1:8000/docs
 
 ## Cloud deployment (Render example)
+The repository keeps the application in `arb-cloud-iphone`; the blueprint sets
+that directory as its service root. Render generates `ADMIN_PASSWORD`; retrieve
+it from the service environment settings and sign in with username `admin`.
+All routes except the minimal health check require HTTP Basic authentication
+when this password is set. Always use HTTPS. For local development, set these
+variables explicitly in your shell; `.env.example` is documentation, not an
+automatically loaded configuration file. Local development has no login when
+`ADMIN_PASSWORD` is unset. Do not expose that mode publicly.
+
 1. Create a private GitHub repository and upload this project.
 2. Create a Render account and connect the repository.
 3. Render can use `render.yaml` as a blueprint. The persistent disk stores SQLite data.
@@ -47,6 +56,9 @@ Open http://127.0.0.1:8000. API docs: http://127.0.0.1:8000/docs
 For production scale, move from SQLite to managed PostgreSQL, add authentication,
 rate limiting, audit logs, backups, monitoring and secret rotation before exposing it
 beyond a private test deployment.
+
+The shared administrator password is intended for private single-owner testing.
+Individual accounts, rate limiting, and credential rotation remain future work.
 
 ## Install on iPhone
 1. Open the deployed HTTPS site in Safari.
@@ -94,7 +106,36 @@ A rejected or moved second leg can leave you with an exposed position.
 ## Next engineering work
 - Integrate an authorised odds provider API with documented terms and data rights.
 - Add market matching / settlement-rule normalisation and stale-price checks.
-- Add user authentication, multi-device security and admin-only access.
+- Replace shared administrator credentials with individual accounts and sessions.
 - Build exchange commission and racing-specific models (dead heats, deductions,
   non-runners, SP/fixed odds, place terms) before phase 2.
-- Add exportable audit and P/L reports.
+- Extend ledger exports with immutable audit history and reconciliation.
+
+## Ledger reports
+
+`GET /api/reports/summary` returns recorded set counts, open exposure, and realised
+P/L from all settled records. `GET /api/reports/sets.csv` exports the complete ledger,
+including notes and actual P/L. The dashboard links to the download. Text that
+could become a spreadsheet formula is prefixed with an apostrophe; numeric
+profit/loss values retain their numeric representation.
+
+Candidate qualification uses `net_roi`, the worst outcome after rounding stakes
+to cents. `roi` remains the idealised equal-payout figure for API compatibility.
+The input model rejects nonfinite numbers, fractional-cent stakes, blank labels,
+and duplicate outcome selections. The app still relies on manual verification
+that outcomes cover the entire market and have identical settlement rules.
+
+## Development checks
+
+From `arb-cloud-iphone`, after installing `requirements.txt`, run:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The exposure ledger records the submitted stake and profit after stake rounding.
+An opportunity can be opened only once, including after settlement. Opening a set
+uses a serialized SQLite transaction so simultaneous requests cannot exceed capacity
+or record the same opportunity twice. Tests use isolated temporary databases and
+do not send notifications or place bets.
+

@@ -17,3 +17,5 @@ venv/
 # Local development files
 .DS_Store
 .vscode/
+
+.test-deps/
