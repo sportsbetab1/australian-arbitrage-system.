@@ -1,5 +1,27 @@
 # Recovery and scheduled operations
 
+## Database privacy and journal protection
+
+New application database files use private POSIX mode 600. Existing database
+permissions are preserved; preflight fails if a POSIX database or newest
+snapshot is readable/writable by its group or other users. After checking the
+service account owns those files, a host administrator can correct them with
+`chmod 600 /path/to/database /path/to/snapshot`. Protect directories and use
+private ACLs on Windows; this command does not verify Windows ACLs.
+
+Startup adds SQLite triggers rejecting UPDATE/DELETE statements against the
+audit log, bookmaker transaction journal and profit allocations. Existing
+history is preserved and inserts continue to work. Record financial corrections
+as reasoned new reconciliation entries through the existing dashboard. These
+guards prevent ordinary SQL rewrites; they are not cryptographic tamper
+evidence. A host administrator can alter SQLite schema or replace the file, so
+host access controls and separately retained backups remain necessary.
+
+Preflight now checks required application tables and columns in the latest
+snapshot, as well as SQLite integrity and foreign keys. A recent unrelated
+SQLite file cannot satisfy the backup check. The active user check requires
+the expected Hunta and Jay identities, not just an arbitrary count of two users.
+
 ## Host preflight and acceptance
 
 Run `python -m scripts.preflight` with the host's private environment loaded.

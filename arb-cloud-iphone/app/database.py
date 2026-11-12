@@ -8,10 +8,32 @@ Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
 
 def get_db():
+    # SQLite otherwise creates a new file using the process umask, which can
+    # make password/session hashes and financial history readable by others.
+    if str(DB_PATH) != ":memory:":
+        try:
+            descriptor = os.open(DB_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            os.close(descriptor)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # REPLACE performs implicit deletes; make those obey journal protections.
+    conn.execute("PRAGMA recursive_triggers = ON")
     return conn
+
+
+def protect_journals(conn, tables):
+    """Reject ordinary SQL rewrites; host administrators still control SQLite."""
+    for table in tables:
+        if table not in {"audit_log", "account_transactions", "profit_allocations"}:
+            raise ValueError("Unknown journal table.")
+        for operation in ("UPDATE", "DELETE"):
+            conn.execute(f"""CREATE TRIGGER IF NOT EXISTS {table}_no_{operation.lower()}
+                BEFORE {operation} ON {table}
+                BEGIN SELECT RAISE(ABORT, 'Journal history is append-only'); END""")
 
 
 def init_db():
@@ -208,6 +230,7 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id)"
     )
 
+    protect_journals(conn, ("audit_log", "profit_allocations"))
     conn.commit()
     conn.close()
 
