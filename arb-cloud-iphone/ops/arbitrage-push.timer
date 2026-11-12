@@ -1,0 +1,9 @@
+[Unit]
+Description=Retry arbitrage push delivery every minute
+
+[Timer]
+OnBootSec=60
+OnUnitInactiveSec=60
+
+[Install]
+WantedBy=timers.target

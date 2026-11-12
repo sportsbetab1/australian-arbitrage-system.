@@ -50,7 +50,7 @@ If exactly one leg was accepted, **Record one accepted leg as unmatched** stores
 - Betfair commission is hard-coded by bookmaker name and approximated; verify the actual commission and market rules manually.
 - In-app notifications are stored per user for opened, unmatched, partial-leg settlement, and final settlement events, with independent read state. Push subscriptions are stored per signed-in user; delivery endpoints must use HTTPS on Google FCM, Apple Web Push, or Mozilla Push Services hosts. Push events enter a persistent outbox and are attempted immediately when VAPID keys are configured. Failed attempts retry with exponential backoff for up to 10 attempts; exhausted deliveries are marked dead for review. Signed-in users can review queue counts and sanitized dead-letter errors at `/api/push/delivery-status`. Email alerts are not wired to these events.
 - Settlement summary and CSV export are available in the authenticated dashboard.
-- The authenticated dashboard can create and list integrity-checked SQLite snapshots; the restore script validates its source and preserves a pre-restore safety copy. Backups remain manual and on the same storage volume by default; off-site storage, automated scheduling, and a production restore drill remain outstanding.
+- The authenticated dashboard can create and list integrity-checked SQLite snapshots; the restore script validates its source and preserves a pre-restore safety copy. An isolated restore drill and Linux scheduler templates are available in [the operations guide](ops/README.md). Backups remain manual until a host administrator enables scheduling. Off-site storage and a production restore drill remain outstanding.
 - Self-service password recovery, monitoring, and production readiness work remain outstanding.
 - Do not deploy this branch for real-money use. It is under development and no deployment is performed by the repository checks.
 
@@ -141,7 +141,7 @@ A displayed ROI is theoretical and depends on the entered prices, identical sett
 2. Verify The Odds API coverage, event/market matching, provider freshness, and bookmaker-specific rules in a controlled review before relying on feed candidates.
 3. Connect email alerts to the existing event notifications and schedule the push retry command on the host.
 4. Reconcile manually entered bookmaker balances against statements and add adjustment/audit controls.
-5. Schedule backups to an off-site destination and run a documented restore drill.
+5. Enable the prepared backup/push timers on the chosen host, configure private off-site backup transfer, and rehearse host recovery using [the operations guide](ops/README.md).
 6. Expand security tests for session expiry, logout, lockout, origin checks, authorization boundaries, and recovery.
 7. Complete a security and recovery review before any deployment.
 
@@ -175,9 +175,16 @@ Freshness checks and manual settlement-rule verification still apply.
 
 Backup and restore scripts explicitly close every SQLite connection before
 renaming snapshot files. Stop the application and any database writers before
-restoring. Restore failures preserve the original database and a pre-restore
+restoring. Restore refuses targets with WAL, shared-memory, or rollback-journal
+files present; never delete journals to force it. New snapshot and restore files
+use private mode 600 on POSIX; Windows hosts require directory ACLs. Restore
+failures preserve the original database and a pre-restore
 safety copy, and remove the temporary restore file. Run a restore drill against
 an isolated copy before relying on the process in production.
+
+`python -m scripts.recovery_drill /path/to/snapshot.sqlite` restores into a
+temporary directory and verifies integrity, foreign keys, table counts, logical
+content, and safety-copy preservation without replacing the live database.
 
 CI includes Windows backup/restore and feed tests alongside the complete Linux
 suite. Session regressions cover expiry, logout token revocation, lockout, and

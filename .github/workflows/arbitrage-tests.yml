@@ -2,9 +2,9 @@ name: Arbitration system checks
 
 on:
   pull_request:
-    branches: [backend-upgrade]
+    branches: [backend-upgrade, assisted-vetting]
   push:
-    branches: [assisted-vetting, backend-upgrade]
+    branches: [assisted-vetting, backend-upgrade, codex/recovery-operations]
 
 jobs:
   python-checks:
