@@ -82,3 +82,27 @@ def test_calculator_reports_negative_arbitrage_instead_of_hiding_loss():
 
     assert result["roi"] < 0
     assert result["profit"] < 0
+
+
+def test_rounding_disqualifies_a_small_theoretical_arbitrage():
+    from app.main import scan
+    candidate = Candidate(sport="Tennis", event="A v B", market="Winner", total_stake=0.03,
+                          outcomes=[Outcome(selection=s, bookmaker=s, odds=2.1) for s in ("A", "B")])
+    result = calculate(candidate)
+    assert result["roi"] > 0.015
+    assert result["net_roi"] < 0.015
+    assert scan(candidate)["qualified"] is False
+
+
+@pytest.mark.parametrize("changes", [
+    {"event": "   "},
+    {"outcomes": [dict(selection=s, bookmaker="X", odds=2.1) for s in ("Home", " home ")]},
+    {"outcomes": [dict(selection=" ", bookmaker="X", odds=2.1), dict(selection="Away", bookmaker="X", odds=2.1)]},
+])
+def test_candidate_rejects_blank_or_duplicate_labels(changes):
+    from pydantic import ValidationError
+    data = dict(sport="Tennis", event="A v B", market="Winner", total_stake=100,
+                outcomes=[dict(selection=s, bookmaker=s, odds=2.1) for s in ("A", "B")])
+    data.update(changes)
+    with pytest.raises(ValidationError):
+        Candidate(**data)

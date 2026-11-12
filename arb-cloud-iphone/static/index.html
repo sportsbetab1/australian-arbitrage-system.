@@ -200,12 +200,13 @@ a{color:var(--deep-teal)}
 let legCount=2, lastOpportunity=null, lastCandidate=null, currentUser=null, accountsCache=[], positionsCache=[], selectedLegAccounts=[], refreshTimer=null, liveCandidateRows=[];
 function addLeg(){if(legCount>=3)return;legCount++;renderLegs()}
 function renderLegs(){
- const el=document.getElementById('legs');el.innerHTML='';
+ const el=document.getElementById('legs');const saved={};el.querySelectorAll('input').forEach(x=>saved[x.id]=x.value);el.innerHTML='';
  for(let i=1;i<=legCount;i++){
   const d=document.createElement('div');
   d.innerHTML='<div class="section">Outcome '+i+'</div><label>Selection</label><input id="sel'+i+'" value="'+(i===1?'Home':i===2?'Away':'Draw')+'"><label>Bookmaker</label><input id="book'+i+'" value="'+(i===1?'Bookmaker A':i===2?'Bookmaker B':'Bookmaker C')+'"><label>Decimal odds</label><input id="odds'+i+'" type="number" min="1.01" step="0.01" value="'+(i===1?'2.10':i===2?'2.05':'3.50')+'"><label>Commission % (if applicable)</label><input id="comm'+i+'" type="number" min="0" max="99" step="0.1" value="0">';
   el.appendChild(d)
  }
+ el.querySelectorAll('input').forEach(x=>{if(x.id in saved)x.value=saved[x.id]});
 }
 function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
 function renderBackups(data){
