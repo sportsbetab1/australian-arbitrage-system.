@@ -24,12 +24,14 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
 from scripts.backup_db import create_backup
 from app.odds import OddsProviderError, build_h2h_candidates, fetch_json
+from app import rate_limits
 
 # ============================================================
 # SYSTEM SETTINGS
@@ -84,6 +86,7 @@ def db():
 def initialise_system():
     init_db()
     migrate_position_schema()
+    rate_limits.initialise()
 
     with closing(db()) as con, con:
         con.executescript("""
@@ -195,11 +198,9 @@ async def require_authenticated_api(request: Request, call_next):
 
         origin = request.headers.get("origin")
         request_host = request.headers.get("host", "").lower()
-        forwarded_scheme = request.headers.get("x-forwarded-proto", "")
-        expected_scheme = (
-            forwarded_scheme.split(",")[0].strip().lower()
-            if forwarded_scheme else request.url.scheme.lower()
-        )
+        # Uvicorn applies forwarded headers only from configured trusted proxies.
+        # Do not trust a raw client-supplied header here.
+        expected_scheme = request.url.scheme.lower()
         try:
             parsed_origin = urlsplit(origin) if origin else None
         except ValueError:
@@ -216,6 +217,15 @@ async def require_authenticated_api(request: Request, call_next):
                 {"detail": "Request origin is not allowed."},
                 status_code=403,
             )
+
+    if path in {"/api/auth/login", "/api/auth/setup"} and request.method == "POST":
+        retry = await run_in_threadpool(rate_limits.consume, "auth-global", "all", 60)
+        if not retry:
+            identity = request.client.host if request.client else "unknown"
+            retry = await run_in_threadpool(rate_limits.consume, "auth-client", identity, 20)
+        if retry:
+            return JSONResponse({"detail": "Too many requests. Please try again shortly."},
+                                status_code=429, headers={"Retry-After": str(retry)})
 
     if not path.startswith("/api/") or path in AUTH_PUBLIC_PATHS:
         return await call_next(request)
@@ -237,6 +247,11 @@ async def require_authenticated_api(request: Request, call_next):
         return response
 
     request.state.auth_user = user
+    if path.startswith("/api/odds/"):
+        retry = await run_in_threadpool(rate_limits.consume, "odds-user", user["id"], 10)
+        if retry:
+            return JSONResponse({"detail": "Odds request limit reached. Please wait before scanning again."},
+                                status_code=429, headers={"Retry-After": str(retry)})
     return await call_next(request)
 
 
