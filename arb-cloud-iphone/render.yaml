@@ -2,6 +2,8 @@ services:
   - type: web
     name: arbitrage-control
     runtime: python
+    rootDir: arb-cloud-iphone
+    healthCheckPath: /api/health
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
@@ -30,3 +32,16 @@ services:
         sync: false
       - key: VAPID_SUBJECT
         sync: false
+      - key: AUTH_SETUP_TOKEN
+        sync: false
+      - key: ODDS_API_KEY
+        sync: false
+      - key: ODDS_API_BASE
+        value: https://api.the-odds-api.com/v4
+      - key: BACKUP_DIR
+        value: /var/data/backups
+      - key: BACKUP_KEEP
+        value: "14"
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+

@@ -1,238 +1,2365 @@
-import os, json, sqlite3, uuid, smtplib, ssl
+from contextlib import closing
+import os
+import sqlite3
+import json
+from pathlib import Path
+import uuid
+import csv
+import io
+import re
+import smtplib
+import ssl
+import hashlib
+import hmac
+import ipaddress
+import secrets
 from email.message import EmailMessage
-from datetime import datetime, timezone
-from typing import List, Optional
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from datetime import datetime, timezone, timedelta
+from urllib.parse import urlsplit
+from typing import List, Literal
+
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-DB_PATH = os.getenv("DB_PATH", "/var/data/arbitrage.db")
-os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+from app import database as database_module
+from app.database import get_db, init_db, migrate_position_schema
+from scripts.backup_db import create_backup
+from app.odds import OddsProviderError, build_h2h_candidates, fetch_json
 
-BANKROLL = 10000.0
-STAKE_PER_SET = 500.0
-MAX_OPEN_SETS = 5
-MAX_OPEN_EXPOSURE = 2500.0
+# ============================================================
+# SYSTEM SETTINGS
+# ============================================================
+
+STARTING_BANKROLL = 10000.00
+HUNTA_ALLOCATION = 4500.00
+JAY_ALLOCATION = 4500.00
+SETTLEMENT_BUFFER_LIMIT = 1000.00
+
+MAX_EXPOSURE_PERCENT = 0.75
+PROTECTED_RESERVE_PERCENT = 0.25
 MIN_NET_ROI = 0.015
 
+REINVESTMENT_PERCENT = 0.75
+WITHDRAWAL_PERCENT = 0.25
+
+BUFFER_DEADLINE_HOURS = 24
+BOOKMAKERS = [
+    "Sportsbet",
+    "Betfair",
+    "PointsBet",
+    "Unibet",
+    "Dabble",
+    "Picklebet",
+    "Ladbrokes",
+    "TAB",
+]
+
+MAX_OPEN_POSITIONS = 15
+
+MAX_EXPOSURE = round(
+    STARTING_BANKROLL * MAX_EXPOSURE_PERCENT, 2
+)
+
+
 def now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc)
+
+
+def now_text():
+    return now().isoformat()
+
 
 def db():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
+    return get_db()
 
-def init_db():
-    with db() as con:
-        con.execute("""CREATE TABLE IF NOT EXISTS opportunities (
-            id TEXT PRIMARY KEY, created_at TEXT, sport TEXT, event TEXT, market TEXT,
-            outcomes_json TEXT, sum_inverse REAL, roi REAL, stake_json TEXT, status TEXT
-        )""")
-        con.execute("""CREATE TABLE IF NOT EXISTS sets (
-            id TEXT PRIMARY KEY, opportunity_id TEXT, created_at TEXT, sport TEXT,
-            event TEXT, market TEXT, total_stake REAL, roi REAL, expected_profit REAL,
-            status TEXT, actual_pnl REAL, notes TEXT
-        )""")
-        con.execute("""CREATE TABLE IF NOT EXISTS push_subscriptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, subscription_json TEXT UNIQUE
-        )""")
 
-app = FastAPI(title="Arbitrage Control API", version="0.1.0")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# ============================================================
+# DATABASE INITIALISATION
+# ============================================================
+def initialise_system():
+    init_db()
+    migrate_position_schema()
 
-class Outcome(BaseModel):
-    selection: str
-    bookmaker: str
+    with closing(db()) as con, con:
+        con.executescript("""
+        CREATE TABLE IF NOT EXISTS system_config (
+            setting TEXT PRIMARY KEY,
+            value TEXT NOT NULL        );
+
+        CREATE TABLE IF NOT EXISTS account_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            transaction_type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            reference_id INTEGER,
+            FOREIGN KEY(account_id) REFERENCES accounts(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_position_legs_position
+        ON position_legs(position_id);
+
+        CREATE INDEX IF NOT EXISTS idx_positions_status
+        ON positions(status);
+
+        CREATE INDEX IF NOT EXISTS idx_buffer_status
+        ON buffer_ledger(status);
+        """)
+
+        transaction_columns = {
+            row["name"]
+            for row in con.execute("PRAGMA table_info(account_transactions)")
+        }
+        if "reference_id" not in transaction_columns:
+            con.execute(
+                "ALTER TABLE account_transactions ADD COLUMN reference_id INTEGER"
+            )
+        con.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_account_transactions_reference
+            ON account_transactions(account_id, transaction_type, reference_id)
+            WHERE reference_id IS NOT NULL
+        """)
+
+        settings = {
+            "starting_bankroll": STARTING_BANKROLL,
+            "hunta_allocation": HUNTA_ALLOCATION,
+            "jay_allocation": JAY_ALLOCATION,
+            "settlement_buffer_limit": SETTLEMENT_BUFFER_LIMIT,
+            "max_exposure_percent": MAX_EXPOSURE_PERCENT,
+            "protected_reserve_percent": PROTECTED_RESERVE_PERCENT,
+            "minimum_net_roi": MIN_NET_ROI,
+            "reinvestment_percent": REINVESTMENT_PERCENT,
+            "withdrawal_percent": WITHDRAWAL_PERCENT,
+        }
+
+        for key, value in settings.items():
+            con.execute(
+                """
+                INSERT OR IGNORE INTO system_config(setting, value)
+                VALUES (?, ?)
+                """,
+                (key, str(value)),
+            )
+
+
+# ============================================================
+# API AND MODELS
+# ============================================================
+
+app = FastAPI(
+    title="Australian Arbitrage Control API",
+    version="1.0.0",
+    description="Manual-confirmation arbitrage control system",
+)
+
+app.mount(
+    "/static",
+    StaticFiles(directory="static"),
+    name="static",
+)
+
+@app.exception_handler(RequestValidationError)
+async def sanitized_validation_error(request: Request, error: RequestValidationError):
+    details = [
+        {
+            "loc": item.get("loc", ()),
+            "msg": item.get("msg", "Invalid input."),
+            "type": item.get("type", "value_error"),
+        }
+        for item in error.errors()
+    ]
+    return JSONResponse({"detail": details}, status_code=422)
+
+AUTH_COOKIE_NAME = "arb_session"
+AUTH_SESSION_HOURS = 12
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "true").lower() == "true"
+AUTH_PUBLIC_PATHS = {
+    "/api/health",
+    "/api/auth/status",
+    "/api/auth/setup",
+    "/api/auth/login",
+}
+
+
+@app.middleware("http")
+async def require_authenticated_api(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/") and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        from urllib.parse import urlsplit
+
+        origin = request.headers.get("origin")
+        request_host = request.headers.get("host", "").lower()
+        forwarded_scheme = request.headers.get("x-forwarded-proto", "")
+        expected_scheme = (
+            forwarded_scheme.split(",")[0].strip().lower()
+            if forwarded_scheme else request.url.scheme.lower()
+        )
+        try:
+            parsed_origin = urlsplit(origin) if origin else None
+        except ValueError:
+            parsed_origin = None
+        if (
+            parsed_origin is None
+            or parsed_origin.scheme.lower() != expected_scheme
+            or parsed_origin.netloc.lower() != request_host
+            or parsed_origin.path not in ("", "/")
+            or parsed_origin.query
+            or parsed_origin.fragment
+        ):
+            return JSONResponse(
+                {"detail": "Request origin is not allowed."},
+                status_code=403,
+            )
+
+    if not path.startswith("/api/") or path in AUTH_PUBLIC_PATHS:
+        return await call_next(request)
+
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    user = get_authenticated_user(token) if token else None
+    if user is None:
+        response = JSONResponse(
+            {"detail": "Please sign in to use the arbitrage dashboard."},
+            status_code=401,
+        )
+        response.delete_cookie(
+            AUTH_COOKIE_NAME,
+            path="/",
+            secure=AUTH_COOKIE_SECURE,
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+
+    request.state.auth_user = user
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def prevent_api_caching(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
+MONEY_INPUT_FIELDS = {
+    "total_stake",
+    "stake",
+    "actual_return",
+    "amount",
+    "actual_balance",
+}
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def monetary_values_use_cents(cls, value, info):
+        if (
+            info.field_name in MONEY_INPUT_FIELDS
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and abs(float(value) - round(float(value), 2)) > 1e-8
+        ):
+            raise ValueError("Money amounts must be entered to two decimal places.")
+        return value
+
+
+class Outcome(StrictModel):
+    selection: str = Field(min_length=1, max_length=200)
+    bookmaker: str = Field(min_length=1, max_length=200)
     odds: float = Field(gt=1.0)
-    commission_pct: float = Field(default=0.0, ge=0, lt=100)
+    commission_pct: float = Field(default=0, ge=0, lt=100)
 
-class Candidate(BaseModel):
+    @field_validator("selection", "bookmaker", mode="before")
+    @classmethod
+    def trim_label(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+class Candidate(StrictModel):
+    sport: str = Field(min_length=1, max_length=100)
+    event: str = Field(min_length=1, max_length=300)
+    market: str = Field(min_length=1, max_length=300)
+    outcomes: List[Outcome] = Field(min_length=2, max_length=3)
+    total_stake: float = Field(gt=0)
+
+    @field_validator("sport", "event", "market", mode="before")
+    @classmethod
+    def trim_label(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def distinct_outcomes(self):
+        labels = [outcome.selection.casefold() for outcome in self.outcomes]
+        if len(set(labels)) != len(labels):
+            raise ValueError("Each outcome must have a different selection.")
+        return self
+
+
+class PositionLeg(StrictModel):
+    account_id: int
+    event_id: str = Field(min_length=1)
+    market_id: str = Field(min_length=1)
+    outcome_id: str = Field(min_length=1)
+    selection: str = Field(min_length=1)
+    odds: float = Field(gt=1.0)
+    stake: float = Field(gt=0)
+    commission_pct: float = Field(default=0, ge=0, lt=100)
+    manually_accepted: bool = Field(default=False, strict=True)
+
+
+class OpenPosition(StrictModel):
     sport: str
     event: str
     market: str
-    # One price for each mutually exclusive outcome. This starter API accepts two or three legs.
-    outcomes: List[Outcome] = Field(min_length=2, max_length=3)
-    total_stake: float = Field(default=500, gt=0, le=500)
-
-class OpenSet(BaseModel):
-    opportunity_id: str
-    manual_confirmation: bool
+    event_id: str = Field(min_length=1)
+    market_id: str = Field(min_length=1)
+    market_type: Literal["binary"] = "binary"
+    possible_outcomes: List[str] = Field(min_length=2, max_length=2)
+    market_rules_verified: bool = Field(strict=True)
+    legs: List[PositionLeg] = Field(min_length=2, max_length=2)
+    manual_confirmation: bool = Field(strict=True)
     notes: str = ""
 
-class SettleSet(BaseModel):
-    actual_pnl: float
+
+class RecordHedge(StrictModel):
+    account_id: int
+    outcome_id: str = Field(min_length=1)
+    selection: str = Field(min_length=1)
+    odds: float = Field(gt=1.0)
+    stake: float = Field(gt=0)
+    manual_confirmation: bool = Field(strict=True)
+    manually_accepted: bool = Field(strict=True)
+    notes: str = Field(default="", max_length=500)
+
+
+class SettleLeg(StrictModel):
+    actual_return: float = Field(ge=0)
     notes: str = ""
 
-class PushSub(BaseModel):
+
+class CashoutLeg(SettleLeg):
+    notes: str = Field(min_length=1, max_length=500)
+    manual_confirmation: bool = Field(strict=True)
+
+    @field_validator("notes")
+    @classmethod
+    def require_cashout_reason(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Enter a cashout reference or note.")
+        return value
+
+
+class BufferCommit(StrictModel):
+    position_id: int | None = None
+    amount: float = Field(gt=0)
+    description: str = ""
+
+
+class BufferResolve(StrictModel):
+    notes: str = ""
+
+
+class OpeningBalance(StrictModel):
+    amount: float = Field(ge=0)
+
+
+class AccountTransaction(StrictModel):
+    transaction_type: Literal["deposit", "withdrawal"]
+    amount: float = Field(gt=0)
+    description: str = Field(min_length=1, max_length=240)
+
+
+class PushSub(StrictModel):
     subscription: dict
 
-def net_decimal_odds(outcome: Outcome):
-    # Approximate commission adjustment on net winnings; not suitable for all exchange markets.
-    c = outcome.commission_pct / 100.0
-    return 1.0 + (outcome.odds - 1.0) * (1.0 - c)
+class AccountReconciliation(StrictModel):
+    actual_balance: float = Field(ge=0)
+    reason: str = Field(min_length=1, max_length=240)
+
+
+class AuthSetup(StrictModel):
+    setup_token: str = Field(min_length=1)
+    hunta_password: str = Field(min_length=12, max_length=256)
+    jay_password: str = Field(min_length=12, max_length=256)
+
+
+class AuthLogin(StrictModel):
+    username: Literal["hunta", "jay"]
+    password: str = Field(min_length=1, max_length=256)
+
+
+password_hasher = PasswordHasher()
+DUMMY_PASSWORD_HASH = password_hasher.hash(secrets.token_urlsafe(24))
+
+
+def token_digest(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def get_authenticated_user(token):
+    con = db()
+    try:
+        row = con.execute("""
+            SELECT auth_users.id, auth_users.username, auth_users.display_name,
+                   auth_sessions.expires_at
+            FROM auth_sessions
+            JOIN auth_users ON auth_users.id = auth_sessions.user_id
+            WHERE auth_sessions.token_hash = ? AND auth_users.is_active = 1
+        """, (token_digest(token),)).fetchone()
+
+        if not row:
+            return None
+        if row["expires_at"] <= now_text():
+            con.execute(
+                "DELETE FROM auth_sessions WHERE token_hash = ?",
+                (token_digest(token),),
+            )
+            con.commit()
+            return None
+
+        return {
+            "id": row["id"],
+            "username": row["username"],
+            "display_name": row["display_name"],
+        }
+    finally:
+        con.close()
+
+
+def auth_setup_required():
+    con = db()
+    try:
+        count = con.execute(
+            "SELECT COUNT(*) AS total FROM auth_users"
+        ).fetchone()["total"]
+        return count < 2
+    finally:
+        con.close()
+
+
+@app.get("/api/auth/status")
+def auth_status(request: Request):
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    user = get_authenticated_user(token) if token else None
+    return {
+        "authenticated": user is not None,
+        "setup_required": auth_setup_required(),
+        "user": user,
+    }
+
+
+@app.post("/api/auth/setup")
+def setup_authentication(req: AuthSetup):
+    expected_token = os.getenv("AUTH_SETUP_TOKEN", "")
+    if not expected_token:
+        raise HTTPException(
+            503,
+            "Account setup is disabled until AUTH_SETUP_TOKEN is configured.",
+        )
+    if not hmac.compare_digest(req.setup_token.encode("utf-8"), expected_token.encode("utf-8")):
+        raise HTTPException(403, "The setup token is invalid.")
+
+    con = db()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        count = con.execute(
+            "SELECT COUNT(*) AS total FROM auth_users"
+        ).fetchone()["total"]
+        if count:
+            raise HTTPException(409, "Initial account setup has already been completed.")
+
+        con.execute("""
+            INSERT INTO auth_users(username, display_name, password_hash)
+            VALUES (?, ?, ?), (?, ?, ?)
+        """, (
+            "hunta", "Hunta", password_hasher.hash(req.hunta_password),
+            "jay", "Jay", password_hasher.hash(req.jay_password),
+        ))
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+    return {"ok": True, "message": "Hunta and Jay accounts are ready. Please sign in."}
+
+
+@app.post("/api/auth/login")
+def login(req: AuthLogin, response: Response):
+    username = req.username.lower()
+    con = db()
+    try:
+        row = con.execute("""
+            SELECT id, username, display_name, password_hash,
+                   failed_attempts, locked_until, is_active
+            FROM auth_users
+            WHERE username = ?
+        """, (username,)).fetchone()
+
+        stored_hash = row["password_hash"] if row else DUMMY_PASSWORD_HASH
+        if row and row["locked_until"] and row["locked_until"] > now_text():
+            raise HTTPException(423, "This account is temporarily locked after failed sign-in attempts.")
+        verified = False
+        try:
+            password_hasher.verify(stored_hash, req.password)
+            verified = True
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            verified = False
+
+        # Verify the expensive hash before taking the write lock, then re-read
+        # account state under that lock. Concurrent failures cannot lose counts,
+        # and deactivation/password rotation cannot issue a stale session.
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("""
+            SELECT id, username, display_name, password_hash,
+                   failed_attempts, locked_until, is_active
+            FROM auth_users WHERE username = ?
+        """, (username,)).fetchone()
+        if row and row["locked_until"] and row["locked_until"] > now_text():
+            raise HTTPException(423, "This account is temporarily locked after failed sign-in attempts.")
+        failed_attempts = int(row["failed_attempts"]) if row else 0
+        if row and row["locked_until"]:
+            failed_attempts = 0
+        verified = verified and row is not None and row["password_hash"] == stored_hash
+
+        if not row or not row["is_active"] or not verified:
+            if row:
+                attempts = failed_attempts + 1
+                locked_until = (
+                    (now() + timedelta(minutes=15)).isoformat()
+                    if attempts >= 5 else None
+                )
+                con.execute("""
+                    UPDATE auth_users
+                    SET failed_attempts = ?, locked_until = ?
+                    WHERE id = ?
+                """, (attempts, locked_until, row["id"]))
+                con.commit()
+            raise HTTPException(401, "Username or password is incorrect.")
+
+        con.execute("""
+            UPDATE auth_users
+            SET failed_attempts = 0, locked_until = NULL, last_login = ?
+            WHERE id = ?
+        """, (now_text(), row["id"]))
+
+        token = secrets.token_urlsafe(32)
+        expires_at = (now() + timedelta(hours=AUTH_SESSION_HOURS)).isoformat()
+        con.execute("""
+            INSERT INTO auth_sessions(token_hash, user_id, expires_at)
+            VALUES (?, ?, ?)
+        """, (token_digest(token), row["id"], expires_at))
+        con.commit()
+
+        response.set_cookie(
+            AUTH_COOKIE_NAME,
+            token,
+            max_age=AUTH_SESSION_HOURS * 60 * 60,
+            httponly=True,
+            secure=AUTH_COOKIE_SECURE,
+            samesite="strict",
+            path="/",
+        )
+        return {
+            "ok": True,
+            "user": {
+                "username": row["username"],
+                "display_name": row["display_name"],
+            },
+            "expires_at": expires_at,
+        }
+    finally:
+        con.close()
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response):
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    if token:
+        con = db()
+        try:
+            con.execute(
+                "DELETE FROM auth_sessions WHERE token_hash = ?",
+                (token_digest(token),),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+    response.delete_cookie(
+        AUTH_COOKIE_NAME,
+        path="/",
+        secure=AUTH_COOKIE_SECURE,
+        httponly=True,
+        samesite="strict",
+    )
+    return {"ok": True}
+
+
+
+# ============================================================
+# ODDS AND ROI CALCULATIONS
+# ============================================================
+
+def net_decimal_odds(odds, commission_pct=0):
+    commission = commission_pct / 100
+    return 1 + (odds - 1) * (1 - commission)
+
 
 def calculate(candidate: Candidate):
-    adjusted = [net_decimal_odds(o) for o in candidate.outcomes]
-    inv = [1.0 / o for o in adjusted]
-    s = sum(inv)
-    roi = (1.0 / s) - 1.0
-    stakes = [candidate.total_stake * x / s for x in inv]
-    # round to cents and leave rounding residual on last leg
-    rounded = [round(x, 2) for x in stakes]
-    rounded[-1] = round(candidate.total_stake - sum(rounded[:-1]), 2)
-    payout = min(rounded[i] * adjusted[i] for i in range(len(rounded)))
-    profit = payout - candidate.total_stake
-    return {"sum_inverse": s, "roi": roi, "stakes": rounded,
-            "equalised_payout": payout, "profit": profit, "adjusted_odds": adjusted}
+    adjusted = [
+        net_decimal_odds(o.odds, o.commission_pct)
+        for o in candidate.outcomes
+    ]
+
+    inverse_sum = sum(1 / odds for odds in adjusted)
+    roi = (1 / inverse_sum) - 1
+
+    stakes = [
+        candidate.total_stake * (1 / odds) / inverse_sum
+        for odds in adjusted
+    ]
+
+    stakes = [round(x, 2) for x in stakes]
+    stakes[-1] = round(
+        candidate.total_stake - sum(stakes[:-1]), 2
+    )
+
+    payout = min(
+        stakes[i] * adjusted[i]
+        for i in range(len(stakes))
+    )
+
+    return {
+        "sum_inverse": inverse_sum,
+        "roi": roi,
+        "net_roi": (payout - candidate.total_stake) / candidate.total_stake,
+        "stakes": stakes,
+        "equalised_payout": payout,
+        "profit": payout - candidate.total_stake,
+        "adjusted_odds": adjusted,
+    }
+
+
+def calculate_position_roi(legs, possible_outcomes, commission_by_account):
+    total_stake = sum(leg.stake for leg in legs)
+
+    if total_stake <= 0:
+        raise ValueError("Total stake must be positive.")
+
+    scenario_results = []
+
+    for outcome_id in possible_outcomes:
+        total_return = 0.0
+
+        for leg in legs:
+            if leg.outcome_id == outcome_id:
+                total_return += (
+                    leg.stake
+                    * net_decimal_odds(
+                        leg.odds,
+                        commission_by_account[leg.account_id],
+                    )
+                )
+
+        profit = total_return - total_stake
+        roi = profit / total_stake
+
+        scenario_results.append({
+            "outcome_id": outcome_id,
+            "total_return": round(total_return, 2),
+            "profit": round(profit, 2),
+            "roi": roi,
+        })
+
+    worst_case = min(
+        scenario_results,
+        key=lambda result: result["profit"],
+    )
+
+    return {
+        "total_stake": round(total_stake, 2),
+        "minimum_payout": worst_case["total_return"],
+        "expected_profit": worst_case["profit"],
+        "roi": worst_case["roi"],
+        "scenarios": scenario_results,
+    }
+
+
+# ============================================================
+# EXPOSURE AND BUFFER CONTROLS
+# ============================================================
+
+def get_account_balance(con, account_id):
+    row = con.execute("""
+        SELECT accounts.opening_balance + COALESCE(SUM(account_transactions.amount), 0) AS balance
+        FROM accounts
+        LEFT JOIN account_transactions ON account_transactions.account_id = accounts.id
+        WHERE accounts.id = ?
+        GROUP BY accounts.id
+    """, (account_id,)).fetchone()
+    return round(float(row["balance"]), 2) if row else None
+
+
+def get_open_exposure(con):
+    row = con.execute("""
+        SELECT COALESCE(SUM(total_stake), 0) AS exposure
+        FROM positions
+        WHERE status IN ('Open', 'Unmatched')
+    """).fetchone()
+
+    return round(float(row["exposure"]), 2)
+
+
+def get_buffer_state(con):
+    rows = con.execute("""
+        SELECT
+            COALESCE(SUM(
+                CASE WHEN status = 'committed'
+                THEN amount ELSE 0 END
+            ), 0) AS committed,
+            COALESCE(SUM(
+                CASE WHEN status = 'resolved'
+                THEN amount ELSE 0 END
+            ), 0) AS resolved
+        FROM buffer_ledger
+    """).fetchone()
+
+    committed = round(float(rows["committed"]), 2)
+
+    overdue = con.execute("""
+        SELECT COUNT(*) AS total
+        FROM buffer_ledger
+        WHERE status = 'committed'
+        AND due_at < ?
+    """, (now_text(),)).fetchone()["total"]
+
+    return {
+        "limit": SETTLEMENT_BUFFER_LIMIT,
+        "committed": committed,
+        "available": round(
+            SETTLEMENT_BUFFER_LIMIT - committed, 2
+        ),
+        "overdue_items": overdue,
+        "new_positions_paused": overdue > 0,
+    }
+
+
+def check_new_position_allowed(con, additional_exposure):
+    buffer = get_buffer_state(con)
+
+    unmatched = con.execute("""
+        SELECT COUNT(*) AS total
+        FROM positions
+        WHERE status = 'Unmatched'
+    """).fetchone()["total"]
+    if unmatched:
+        raise HTTPException(
+            409,
+            "New positions paused: resolve the unmatched position before continuing.",
+        )
+
+    if buffer["overdue_items"] > 0:
+        raise HTTPException(
+            409,
+            "New positions paused: a settlement-buffer commitment "
+            "has exceeded its 24-hour deadline.",
+        )
+
+    open_positions = con.execute(
+        "SELECT COUNT(*) AS total FROM positions WHERE status IN ('Open', 'Unmatched')"
+    ).fetchone()["total"]
+    if open_positions >= MAX_OPEN_POSITIONS:
+        raise HTTPException(
+            409,
+            f"Open-position limit reached ({MAX_OPEN_POSITIONS}). Settle an existing position before adding another.",
+        )
+
+    current = get_open_exposure(con)
+    proposed = round(current + additional_exposure, 2)
+
+    if proposed > MAX_EXPOSURE:
+        raise HTTPException(
+            409,
+            f"Exposure limit exceeded. Current: ${current:.2f}; "
+            f"proposed: ${proposed:.2f}; limit: ${MAX_EXPOSURE:.2f}.",
+        )
+
+
+# ============================================================
+# PROFIT ALLOCATION
+# ============================================================
+
+def allocate_realised_profit(con, position_id, profit):
+    if profit <= 0:
+        return {
+            "reinvested": 0,
+            "withdrawal": 0,
+        }
+
+    reinvested = round(
+        profit * REINVESTMENT_PERCENT, 2
+    )
+
+    withdrawal = round(
+        profit - reinvested, 2
+    )
+
+    con.execute("""
+        INSERT INTO profit_allocations (
+            position_id,
+            realised_profit,
+            reinvested_amount,
+            withdrawal_amount
+        )
+        VALUES (?, ?, ?, ?)
+    """, (
+        position_id,
+        profit,
+        reinvested,
+        withdrawal,
+    ))
+
+    con.execute("""
+        INSERT INTO bankroll_ledger (
+            owner, entry_type, amount, description, reference_id
+        )
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        None,
+        "realised_profit",
+        profit,
+        "Realised position profit",
+        position_id,
+    ))
+
+    return {
+        "reinvested": reinvested,
+        "withdrawal": withdrawal,
+    }
+
+
+# ============================================================
+# STARTUP
+# ============================================================
+
+@app.on_event("startup")
+def startup():
+    initialise_system()
+
+
+@app.get("/")
+def home():
+    return FileResponse("static/index.html")
+
+
+@app.get("/api/health")
+def health():
+    return {
+        "ok": True,
+        "service": "australian-arbitrage-control",
+        "mode": "manual-only",
+        "version": "1.0.0",
+    }
+
+
+# ============================================================
+# CONFIGURATION AND DASHBOARD DATA
+# ============================================================
+
+@app.get("/api/config")
+def config():
+    return {
+        "starting_bankroll": STARTING_BANKROLL,
+        "hunta_allocation": HUNTA_ALLOCATION,
+        "jay_allocation": JAY_ALLOCATION,
+        "settlement_buffer": SETTLEMENT_BUFFER_LIMIT,
+        "max_exposure": MAX_EXPOSURE,
+        "max_exposure_percent": MAX_EXPOSURE_PERCENT,
+        "protected_reserve_percent": PROTECTED_RESERVE_PERCENT,
+        "minimum_net_roi": MIN_NET_ROI,
+        "reinvestment_percent": REINVESTMENT_PERCENT,
+        "withdrawal_percent": WITHDRAWAL_PERCENT,
+        "bookmakers": BOOKMAKERS,
+        "bet_placement": "manual only",
+        "concurrent_position_limit": MAX_OPEN_POSITIONS,
+    }
+
+
+@app.get("/api/accounts")
+def accounts():
+    with closing(db()) as con, con:
+        rows = con.execute("""
+            SELECT
+                accounts.id, accounts.owner, accounts.bookmaker,
+                accounts.opening_balance, accounts.status,
+                ROUND(accounts.opening_balance + COALESCE(SUM(account_transactions.amount), 0), 2) AS balance
+            FROM accounts
+            LEFT JOIN account_transactions
+                ON account_transactions.account_id = accounts.id
+            GROUP BY accounts.id
+            ORDER BY accounts.owner, accounts.bookmaker
+        """).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/accounts/{account_id}/opening-balance")
+def set_opening_balance(account_id: int, req: OpeningBalance, request: Request):
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        account = con.execute(
+            "SELECT id, opening_balance FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()
+        if not account:
+            raise HTTPException(404, "Bookmaker account not found.")
+        transactions = con.execute(
+            "SELECT COUNT(*) AS total FROM account_transactions WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()["total"]
+        legs = con.execute(
+            "SELECT COUNT(*) AS total FROM position_legs WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()["total"]
+        if transactions or legs or float(account["opening_balance"]) != 0:
+            raise HTTPException(
+                409,
+                "Opening balance can only be set before this account has ledger activity.",
+            )
+        con.execute(
+            "UPDATE accounts SET opening_balance = ? WHERE id = ?",
+            (req.amount, account_id),
+        )
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            ("account_opening_balance_set", json.dumps({
+                "account_id": account_id,
+                "amount": req.amount,
+                "confirmed_by": request.state.auth_user["username"],
+            })),
+        )
+
+    return {"ok": True, "balance": round(req.amount, 2)}
+
+
+@app.post("/api/accounts/{account_id}/transactions")
+def record_account_transaction(account_id: int, req: AccountTransaction, request: Request):
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        account = con.execute(
+            "SELECT id FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()
+        if not account:
+            raise HTTPException(404, "Bookmaker account not found.")
+        amount = req.amount if req.transaction_type == "deposit" else -req.amount
+        current_balance = get_account_balance(con, account_id)
+        if amount < 0 and current_balance < req.amount:
+            raise HTTPException(409, "Withdrawal exceeds the recorded balance.")
+        con.execute("""
+            INSERT INTO account_transactions (
+                account_id, transaction_type, amount, description
+            )
+            VALUES (?, ?, ?, ?)
+        """, (account_id, req.transaction_type, amount, req.description.strip()))
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            ("account_transaction_recorded", json.dumps({
+                "account_id": account_id,
+                "transaction_type": req.transaction_type,
+                "amount": amount,
+                "confirmed_by": request.state.auth_user["username"],
+            })),
+        )
+        balance = get_account_balance(con, account_id)
+
+    return {"ok": True, "balance": balance}
+
+
+@app.post("/api/accounts/{account_id}/reconcile")
+def reconcile_account_balance(
+    account_id: int,
+    req: AccountReconciliation,
+    request: Request,
+):
+    reason = req.reason.strip()
+    if not reason:
+        raise HTTPException(400, "A reconciliation reason is required.")
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        account = con.execute(
+            "SELECT id FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()
+        if not account:
+            raise HTTPException(404, "Bookmaker account not found.")
+
+        current_balance = get_account_balance(con, account_id)
+        delta = round(req.actual_balance - current_balance, 2)
+        if abs(delta) >= 0.005:
+            con.execute(
+                """
+                INSERT INTO account_transactions (
+                    account_id, transaction_type, amount, description
+                ) VALUES (?, 'reconciliation_adjustment', ?, ?)
+                """,
+                (account_id, delta, reason),
+            )
+            con.execute(
+                "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+                (
+                    "account_balance_reconciled",
+                    json.dumps({
+                        "account_id": account_id,
+                        "previous_balance": current_balance,
+                        "actual_balance": req.actual_balance,
+                        "adjustment": delta,
+                        "reason": reason,
+                        "recorded_by": request.state.auth_user["username"],
+                    }),
+                ),
+            )
+
+    return {
+        "ok": True,
+        "previous_balance": current_balance,
+        "balance": round(req.actual_balance, 2),
+        "adjustment": delta,
+        "message": (
+            "Balance already matched; no ledger entry was needed."
+            if abs(delta) < 0.005 else
+            "Reconciliation adjustment recorded in the account ledger."
+        ),
+    }
+
+
+def backup_directory():
+    configured = os.getenv("BACKUP_DIR")
+    if configured:
+        return Path(configured).resolve()
+    return Path(database_module.DB_PATH).resolve().parent / "backups"
+
+
+@app.get("/api/backups")
+def list_backups():
+    directory = backup_directory()
+    backups = sorted(
+        directory.glob("arbitrage-*.sqlite") if directory.exists() else [],
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
+    return {
+        "items": [
+            {
+                "name": item.name,
+                "size_bytes": item.stat().st_size,
+                "created_at": datetime.fromtimestamp(
+                    item.stat().st_mtime, timezone.utc
+                ).isoformat(),
+            }
+            for item in backups[:30]
+        ]
+    }
+
+
+@app.post("/api/backups/create")
+def create_manual_backup(request: Request):
+    try:
+        keep = int(os.getenv("BACKUP_KEEP", "14"))
+    except ValueError:
+        raise HTTPException(500, "BACKUP_KEEP must be a positive integer.") from None
+    try:
+        target = create_backup(
+            database_module.DB_PATH,
+            backup_directory(),
+            keep=keep,
+        )
+    except (OSError, ValueError, sqlite3.DatabaseError) as error:
+        raise HTTPException(500, f"Backup failed: {error}") from None
+
+    with closing(db()) as con, con:
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            (
+                "database_backup_created",
+                json.dumps({
+                    "filename": target.name,
+                    "size_bytes": target.stat().st_size,
+                    "created_by": request.state.auth_user["username"],
+                }),
+            ),
+        )
+    return {
+        "ok": True,
+        "name": target.name,
+        "size_bytes": target.stat().st_size,
+        "message": "Integrity-checked backup created.",
+    }
+
+
+@app.get("/api/dashboard")
+def dashboard():
+    with closing(db()) as con, con:
+        exposure = get_open_exposure(con)
+        buffer = get_buffer_state(con)
+
+        open_count = con.execute("""
+            SELECT COUNT(*) AS total
+            FROM positions
+            WHERE status IN ('Open', 'Unmatched')
+        """).fetchone()["total"]
+
+        settled = con.execute("""
+            SELECT
+                COUNT(*) AS total,
+                COALESCE((
+                    SELECT SUM(actual_pnl)
+                    FROM positions
+                    WHERE status = 'Settled'
+                ), 0) AS profit
+            FROM positions
+            WHERE status = 'Settled'
+        """).fetchone()
+
+        allocations = con.execute("""
+            SELECT
+                COALESCE(SUM(reinvested_amount), 0) AS reinvested,
+                COALESCE(SUM(withdrawal_amount), 0) AS withdrawals
+            FROM profit_allocations
+        """).fetchone()
+
+    return {
+        "starting_bankroll": STARTING_BANKROLL,
+        "maximum_exposure": MAX_EXPOSURE,
+        "open_exposure": exposure,
+        "remaining_exposure": round(
+            MAX_EXPOSURE - exposure, 2
+        ),
+        "open_positions": open_count,
+        "settled_positions": settled["total"],
+        "realised_profit_loss": round(
+            float(settled["profit"]), 2
+        ),
+        "reinvested_profit": round(
+            float(allocations["reinvested"]), 2
+        ),
+        "withdrawal_allocation": round(
+            float(allocations["withdrawals"]), 2
+        ),
+        "buffer": buffer,
+    }
+
+
+# ============================================================
+# OPPORTUNITY SCANNER - MANUAL ODDS INPUT FOR NOW
+# ============================================================
+
+@app.post("/api/scan")
+def scan(candidate: Candidate):
+    result = calculate(candidate)
+
+    if result["net_roi"] < MIN_NET_ROI or min(result["stakes"]) <= 0:
+        return {
+            "qualified": False,
+            "reason": "Below 1.5% minimum calculated net ROI",
+            **result,
+            "candidate": candidate.model_dump(),
+        }
+
+    opportunity_id = str(uuid.uuid4())
+    data = candidate.model_dump()
+
+    with closing(db()) as con, con:
+        con.execute("""
+            INSERT INTO opportunities
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            opportunity_id,
+            now_text(),
+            candidate.sport,
+            candidate.event,
+            candidate.market,
+            json.dumps(data["outcomes"]),
+            result["sum_inverse"],
+            result["roi"],
+            json.dumps(result["stakes"]),
+            "Candidate",
+        ))
+
+    return {
+        "qualified": True,
+        "opportunity_id": opportunity_id,
+        **result,
+        "candidate": data,
+        "warning": (
+            "Indicative calculation only. Verify exact market rules, "
+            "current odds, liquidity and commission manually."
+        ),
+    }
+
+
+@app.get("/api/odds/sports")
+def odds_sports():
+    try:
+        data, usage = fetch_json(
+            os.getenv("ODDS_API_KEY", ""),
+            "sports",
+            {"all": "false"},
+            base_url=os.getenv("ODDS_API_BASE", "https://api.the-odds-api.com/v4"),
+        )
+    except OddsProviderError as error:
+        raise HTTPException(error.status_code, str(error)) from None
+    if not isinstance(data, list):
+        raise HTTPException(502, "The odds provider returned an invalid sports list.")
+    return {"sports": data, "quota": usage}
+
+
+@app.get("/api/odds/scan/{sport_key}")
+def scan_live_odds(sport_key: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", sport_key):
+        raise HTTPException(400, "Invalid odds-provider sport key.")
+    try:
+        events, usage = fetch_json(
+            os.getenv("ODDS_API_KEY", ""),
+            f"sports/{sport_key}/odds",
+            {"regions": "au", "markets": "h2h", "oddsFormat": "decimal", "dateFormat": "iso"},
+            base_url=os.getenv("ODDS_API_BASE", "https://api.the-odds-api.com/v4"),
+        )
+    except OddsProviderError as error:
+        raise HTTPException(error.status_code, str(error)) from None
+    if not isinstance(events, list):
+        raise HTTPException(502, "The odds provider returned an invalid event list.")
+
+    results = []
+    for raw in build_h2h_candidates(events):
+        candidate_data = {
+            "sport": raw["sport"],
+            "event": raw["event"],
+            "market": raw["market"],
+            "outcomes": raw["outcomes"],
+            "total_stake": 500.0,
+        }
+        candidate = Candidate(**candidate_data)
+        result = calculate(candidate)
+        if result["net_roi"] < MIN_NET_ROI or min(result["stakes"]) <= 0:
+            continue
+
+        opportunity_id = str(uuid.uuid4())
+        with closing(db()) as con, con:
+            con.execute("""
+                INSERT INTO opportunities
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                opportunity_id,
+                now_text(),
+                candidate.sport,
+                candidate.event,
+                candidate.market,
+                json.dumps(candidate.model_dump()["outcomes"]),
+                result["sum_inverse"],
+                result["roi"],
+                json.dumps(result["stakes"]),
+                "Live candidate",
+            ))
+        results.append({
+            "qualified": True,
+            "opportunity_id": opportunity_id,
+            **result,
+            "candidate": candidate.model_dump(),
+            "provider_event_id": raw["event_id"],
+            "commence_time": raw["commence_time"],
+            "source_updated_at": raw["source_updated_at"],
+            "warning": (
+                "Live odds are a candidate only. Confirm the event, exact market rules, "
+                "current bookmaker prices, liquidity, and acceptance manually."
+            ),
+        })
+
+    results.sort(key=lambda item: item["roi"], reverse=True)
+    return {
+        "sport_key": sport_key,
+        "events_received": len(events),
+        "qualified_count": len(results),
+        "candidates": results,
+        "quota": usage,
+        "scanned_at": now_text(),
+    }
+
+
+@app.get("/api/opportunities")
+def opportunities():
+    with closing(db()) as con, con:
+        rows = con.execute("""
+            SELECT *
+            FROM opportunities
+            ORDER BY created_at DESC
+            LIMIT 100
+        """).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+# ============================================================
+# POSITION CREATION
+# ============================================================
+
+@app.post("/api/positions/open")
+def open_position(req: OpenPosition, request: Request):
+    return _create_position(req, request, allow_unmatched=False)
+
+
+@app.post("/api/positions/unmatched")
+def record_unmatched_position(req: OpenPosition, request: Request):
+    if sum(1 for leg in req.legs if leg.manually_accepted) != 1:
+        raise HTTPException(
+            400,
+            "An unmatched position must contain exactly one accepted leg.",
+        )
+    return _create_position(req, request, allow_unmatched=True)
+
+
+def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool):
+    if not req.manual_confirmation:
+        raise HTTPException(400, "Manual confirmation is required.")
+
+    accepted_count = sum(1 for leg in req.legs if leg.manually_accepted)
+    if not allow_unmatched and accepted_count != 2:
+        raise HTTPException(400, "Both bookmaker legs must be manually accepted.")
+    if allow_unmatched and accepted_count != 1:
+        raise HTTPException(400, "Exactly one bookmaker leg must be manually accepted.")
+
+    if not req.market_rules_verified:
+        raise HTTPException(400, "Market rules must be manually verified.")
+
+    if len(set(req.possible_outcomes)) != 2:
+        raise HTTPException(400, "Exactly two distinct outcomes are required.")
+
+    if any(not outcome.strip() for outcome in req.possible_outcomes):
+        raise HTTPException(400, "Outcome IDs cannot be blank.")
+
+    leg_outcomes = [leg.outcome_id for leg in req.legs]
+
+    if len(set(leg_outcomes)) != 2:
+        raise HTTPException(400, "Each leg must cover a different outcome.")
+
+    if set(leg_outcomes) != set(req.possible_outcomes):
+        raise HTTPException(400, "Both possible outcomes must be covered.")
+
+    for leg in req.legs:
+        if leg.event_id != req.event_id:
+            raise HTTPException(400, "Leg event IDs do not match.")
+        if leg.market_id != req.market_id:
+            raise HTTPException(400, "Leg market IDs do not match.")
+
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        account_ids = [leg.account_id for leg in req.legs]
+
+        if len(set(account_ids)) != 2:
+            raise HTTPException(400, "Two different accounts are required.")
+
+        placeholders = ",".join("?" for _ in account_ids)
+        account_rows = con.execute(
+            f"""
+            SELECT id, owner, bookmaker, status
+            FROM accounts
+            WHERE id IN ({placeholders})
+            """,
+            account_ids,
+        ).fetchall()
+
+        if len(account_rows) != 2:
+            raise HTTPException(400, "One or more accounts do not exist.")
+
+        owners = {row["owner"] for row in account_rows}
+
+        if owners != {"Hunta", "Jay"}:
+            raise HTTPException(
+                400, "Each position requires one Hunta account and one Jay account."
+            )
+
+        if any(row["status"] != "active" for row in account_rows):
+            raise HTTPException(409, "Both bookmaker accounts must be active.")
+
+        for leg in req.legs:
+            if leg.manually_accepted:
+                available = get_account_balance(con, leg.account_id)
+                if available is None or available < leg.stake:
+                    raise HTTPException(
+                        409,
+                        f"Insufficient recorded balance for account {leg.account_id}; "
+                        "update its opening balance or deposits first.",
+                    )
+
+        commission_by_account = {
+            row["id"]: 6.0 if row["bookmaker"] == "Betfair" else 0.0
+            for row in account_rows
+        }
+        betfair_account_ids = [
+            row["id"] for row in account_rows
+            if row["bookmaker"] == "Betfair"
+        ]
+
+        for betfair_account_id in betfair_account_ids:
+            existing_bet = con.execute("""
+                SELECT id
+                FROM position_legs
+                WHERE account_id = ?
+                  AND settled = 0
+                LIMIT 1
+            """, (betfair_account_id,)).fetchone()
+
+            if existing_bet:
+                owner = next(
+                    row["owner"] for row in account_rows
+                    if row["id"] == betfair_account_id
+                )
+                raise HTTPException(
+                    409,
+                    f"{owner}'s Betfair account already has an unsettled bet. "
+                    "Settle that Betfair leg before opening another position."
+                )
+        result = calculate_position_roi(
+            req.legs,
+            req.possible_outcomes,
+            commission_by_account,
+        )
+
+        check_new_position_allowed(con, result["total_stake"])
+
+        position_id = con.execute("""
+            INSERT INTO positions (
+                event, sport, market, status, total_stake,
+                expected_profit, expected_roi, manual_confirmed, notes,
+                event_id, market_id, market_type,
+                possible_outcomes_json, market_rules_verified
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 1)
+        """, (
+            req.event, req.sport, req.market,
+            "Unmatched" if allow_unmatched else "Open",
+            result["total_stake"], result["expected_profit"],
+            result["roi"], req.notes, req.event_id, req.market_id,
+            req.market_type, json.dumps(req.possible_outcomes),
+        )).lastrowid
+
+        for leg in req.legs:
+            leg_id = con.execute("""
+                INSERT INTO position_legs (
+                    position_id, account_id, selection,
+                    odds, stake, accepted, settled,
+                    event_id, market_id, outcome_id, commission_pct
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                position_id, leg.account_id, leg.selection,
+                leg.odds, leg.stake, int(leg.manually_accepted),
+                0 if leg.manually_accepted else 1,
+                leg.event_id, leg.market_id, leg.outcome_id,
+                commission_by_account[leg.account_id],
+            )).lastrowid
+
+            if leg.manually_accepted:
+                con.execute("""
+                    INSERT INTO account_transactions (
+                        account_id, transaction_type, amount,
+                        description, reference_id
+                    )
+                    VALUES (?, 'stake_debit', ?, ?, ?)
+                """, (
+                    leg.account_id, -leg.stake,
+                    f"Position {position_id} accepted stake",
+                    leg_id,
+                ))
+
+        con.execute("""
+            INSERT INTO audit_log(action, details)
+            VALUES (?, ?)
+        """, (
+            "position_unmatched" if allow_unmatched else "position_opened",
+            json.dumps({
+                "position_id": position_id,
+                "event": req.event,
+                "event_id": req.event_id,
+                "market_id": req.market_id,
+                "possible_outcomes": req.possible_outcomes,
+                "total_stake": result["total_stake"],
+                "roi": result["roi"],
+                "scenarios": result["scenarios"],
+                "owners": sorted(owners),
+                "confirmed_by": request.state.auth_user["username"],
+                "accepted_legs": accepted_count,
+            }),
+        ))
+
+        notification_type = "position_unmatched" if allow_unmatched else "position_opened"
+        notification_title = "Unmatched leg recorded" if allow_unmatched else "Position recorded"
+        notification_message = f"{req.event}: {accepted_count} bookmaker leg(s) accepted. Review the dashboard for status."
+        create_user_notifications(
+            con, notification_type, position_id,
+            notification_title, notification_message,
+        )
+        push_payload = {
+            "title": notification_title,
+            "body": notification_message,
+            "position_id": position_id,
+            "event_type": notification_type,
+        }
+        from app import push_delivery
+        push_delivery.enqueue_with_connection(con, push_payload)
+
+    status = "Unmatched" if allow_unmatched else "Open"
+    send_push(push_payload)
+    return {
+        "ok": True,
+        "position_id": position_id,
+        "status": status,
+        "confirmed_by": request.state.auth_user["username"],
+        **result,
+        "warning": (
+            f"Entered accepted prices produce a worst-case ROI of {result['roi']:.2%}, "
+            "below the 1.5% candidate threshold. Verify the recorded legs."
+            if result["roi"] < MIN_NET_ROI else None
+        ),
+        "message": (
+            "One accepted leg recorded as unmatched. New positions are paused "
+            "until this position is settled."
+            if allow_unmatched else
+            "Both legs recorded as manually accepted. "
+            "No bookmaker bets were placed by this application."
+        ),
+    }
+
+
+
+
+@app.post("/api/positions/{position_id}/hedge")
+def record_position_hedge(position_id: int, req: RecordHedge, request: Request):
+    if not req.manual_confirmation or not req.manually_accepted:
+        raise HTTPException(
+            400,
+            "Confirm that the hedge was manually placed and accepted before recording it.",
+        )
+
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        position = con.execute(
+            "SELECT * FROM positions WHERE id = ?",
+            (position_id,),
+        ).fetchone()
+        if not position:
+            raise HTTPException(404, "Position not found.")
+        if position["status"] != "Unmatched":
+            raise HTTPException(409, "Only an unmatched position can accept a hedge.")
+
+        accepted = con.execute(
+            """
+            SELECT l.account_id, l.selection, l.odds, l.stake, l.outcome_id,
+                   a.bookmaker
+            FROM position_legs l
+            JOIN accounts a ON a.id = l.account_id
+            WHERE l.position_id = ? AND l.accepted = 1
+            """,
+            (position_id,),
+        ).fetchall()
+        if not accepted:
+            raise HTTPException(409, "Record an accepted leg before adding a hedge.")
+
+        outcomes = json.loads(position["possible_outcomes_json"] or "[]")
+        if len(outcomes) != 2 or req.outcome_id not in outcomes:
+            raise HTTPException(400, "The hedge must cover one of the recorded outcomes.")
+
+        account = con.execute(
+            "SELECT id, bookmaker, status FROM accounts WHERE id = ?",
+            (req.account_id,),
+        ).fetchone()
+        if not account:
+            raise HTTPException(404, "Bookmaker account not found.")
+        if account["status"] != "active":
+            raise HTTPException(409, "The bookmaker account is not active.")
+
+        current_balance = get_account_balance(con, req.account_id)
+        if current_balance is None or current_balance < req.stake:
+            raise HTTPException(409, "Insufficient recorded balance for the hedge account.")
+
+        if account["bookmaker"] == "Betfair":
+            existing_bet = con.execute(
+                """
+                SELECT id FROM position_legs
+                WHERE account_id = ? AND settled = 0
+                LIMIT 1
+                """,
+                (req.account_id,),
+            ).fetchone()
+            if existing_bet:
+                raise HTTPException(
+                    409,
+                    "This Betfair account already has an unsettled bet.",
+                )
+
+        commission_by_account = {}
+        for leg in accepted:
+            commission_by_account[leg["account_id"]] = (
+                6.0 if leg["bookmaker"] == "Betfair" else 0.0
+            )
+        commission_by_account[req.account_id] = (
+            6.0 if account["bookmaker"] == "Betfair" else 0.0
+        )
+
+        def worst_case_profit(legs):
+            total_stake = sum(float(leg["stake"]) for leg in legs)
+            scenario_profits = []
+            for outcome in outcomes:
+                total_return = sum(
+                    float(leg["stake"]) * net_decimal_odds(
+                        float(leg["odds"]),
+                        commission_by_account[leg["account_id"]],
+                    )
+                    for leg in legs
+                    if leg["outcome_id"] == outcome
+                )
+                scenario_profits.append(total_return - total_stake)
+            return min(scenario_profits), total_stake
+
+        baseline_profit, _ = worst_case_profit(accepted)
+        hedge = {
+            "account_id": req.account_id,
+            "selection": req.selection.strip(),
+            "odds": req.odds,
+            "stake": req.stake,
+            "outcome_id": req.outcome_id,
+        }
+        improved_profit, accepted_stake_total = worst_case_profit([*accepted, hedge])
+        if improved_profit <= baseline_profit + 0.005:
+            raise HTTPException(
+                400,
+                "This hedge does not improve the calculated worst-case return. "
+                "Review the outcome, odds, and stake.",
+            )
+
+        current_exposure = get_open_exposure(con)
+        if current_exposure + req.stake > MAX_EXPOSURE:
+            raise HTTPException(
+                409,
+                f"Exposure limit exceeded. Current: ${current_exposure:.2f}; "
+                f"hedge: ${req.stake:.2f}; limit: ${MAX_EXPOSURE:.2f}.",
+            )
+
+        leg_id = con.execute(
+            """
+            INSERT INTO position_legs (
+                position_id, account_id, selection, odds, stake, accepted, settled,
+                event_id, market_id, outcome_id, commission_pct
+            ) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?)
+            """,
+            (
+                position_id, req.account_id, req.selection.strip(), req.odds,
+                req.stake, position["event_id"], position["market_id"],
+                req.outcome_id, commission_by_account[req.account_id],
+            ),
+        ).lastrowid
+        con.execute(
+            """
+            INSERT INTO account_transactions (
+                account_id, transaction_type, amount, description, reference_id
+            ) VALUES (?, 'stake_debit', ?, ?, ?)
+            """,
+            (
+                req.account_id, -req.stake,
+                f"Position {position_id} manually accepted hedge",
+                leg_id,
+            ),
+        )
+        con.execute(
+            """
+            UPDATE positions
+            SET total_stake = total_stake + ?,
+                expected_profit = ?,
+                expected_roi = ?
+            WHERE id = ?
+            """,
+            (
+                req.stake, round(improved_profit, 2),
+                improved_profit / accepted_stake_total, position_id,
+            ),
+        )
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            (
+                "position_hedge_recorded",
+                json.dumps({
+                    "position_id": position_id,
+                    "leg_id": leg_id,
+                    "account_id": req.account_id,
+                    "outcome_id": req.outcome_id,
+                    "stake": req.stake,
+                    "odds": req.odds,
+                    "baseline_worst_case_profit": round(baseline_profit, 2),
+                    "hedged_worst_case_profit": round(improved_profit, 2),
+                    "recorded_by": request.state.auth_user["username"],
+                    "notes": req.notes,
+                }),
+            ),
+        )
+
+    return {
+        "ok": True,
+        "position_id": position_id,
+        "leg_id": leg_id,
+        "position_status": "Unmatched",
+        "worst_case_profit_before": round(baseline_profit, 2),
+        "worst_case_profit_after": round(improved_profit, 2),
+        "message": (
+            "Manually accepted hedge recorded. New positions remain paused "
+            "until every accepted leg in this position is settled."
+        ),
+    }
+
+def create_user_notifications(con, event_type, position_id, title, message):
+    users = con.execute(
+        "SELECT id FROM auth_users WHERE is_active = 1"
+    ).fetchall()
+    con.executemany(
+        """
+        INSERT INTO user_notifications (
+            user_id, event_type, position_id, title, message
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            (user["id"], event_type, position_id, title, message)
+            for user in users
+        ],
+    )
+
+
+@app.get("/api/notifications")
+def list_notifications(request: Request):
+    user_id = request.state.auth_user["id"]
+    with closing(db()) as con, con:
+        rows = con.execute(
+            """
+            SELECT id, event_type, position_id, title, message, created_at, read_at
+            FROM user_notifications
+            WHERE user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 50
+            """,
+            (user_id,),
+        ).fetchall()
+        unread = con.execute(
+            "SELECT COUNT(*) AS total FROM user_notifications WHERE user_id = ? AND read_at IS NULL",
+            (user_id,),
+        ).fetchone()["total"]
+    return {"items": [dict(row) for row in rows], "unread_count": unread}
+
+
+@app.post("/api/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: int, request: Request):
+    user_id = request.state.auth_user["id"]
+    with closing(db()) as con, con:
+        cursor = con.execute(
+            """
+            UPDATE user_notifications
+            SET read_at = ?
+            WHERE id = ? AND user_id = ? AND read_at IS NULL
+            """,
+            (now_text(), notification_id, user_id),
+        )
+        if cursor.rowcount == 0:
+            exists = con.execute(
+                "SELECT 1 FROM user_notifications WHERE id = ? AND user_id = ?",
+                (notification_id, user_id),
+            ).fetchone()
+            if not exists:
+                raise HTTPException(404, "Notification not found.")
+    return {"ok": True}
+
+
+
+# ============================================================
+# POSITION TRACKING AND SETTLEMENT
+# ============================================================
+
+@app.get("/api/reports/summary")
+def reports_summary():
+    with closing(db()) as con, con:
+        totals = con.execute("""
+            SELECT
+                COUNT(*) AS all_positions,
+                SUM(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) AS open_positions,
+                SUM(CASE WHEN status = 'Unmatched' THEN 1 ELSE 0 END) AS unmatched_positions,
+                SUM(CASE WHEN status = 'Settled' THEN 1 ELSE 0 END) AS settled_positions,
+                COALESCE(SUM(CASE WHEN status = 'Settled' THEN actual_pnl ELSE 0 END), 0) AS net_realised_pnl,
+                COALESCE(SUM(CASE WHEN status IN ('Open', 'Unmatched') THEN total_stake ELSE 0 END), 0) AS committed_exposure
+            FROM positions
+        """).fetchone()
+        commissions = con.execute("""
+            SELECT COALESCE(SUM(commission_paid), 0) AS total
+            FROM position_legs
+        """).fetchone()["total"]
+        allocations = con.execute("""
+            SELECT
+                COALESCE(SUM(reinvested_amount), 0) AS reinvested,
+                COALESCE(SUM(withdrawal_amount), 0) AS withdrawn
+            FROM profit_allocations
+        """).fetchone()
+        months = con.execute("""
+            SELECT substr(settled_at, 1, 7) AS month,
+                   COUNT(*) AS positions,
+                   ROUND(COALESCE(SUM(actual_pnl), 0), 2) AS net_pnl
+            FROM positions
+            WHERE status = 'Settled'
+            GROUP BY substr(settled_at, 1, 7)
+            ORDER BY month DESC
+        """).fetchall()
+
+    return {
+        "positions": dict(totals),
+        "commission_paid": round(float(commissions), 2),
+        "reinvested": round(float(allocations["reinvested"]), 2),
+        "withdrawn": round(float(allocations["withdrawn"]), 2),
+        "monthly": [dict(row) for row in months],
+    }
+
+
+def csv_safe_cell(value):
+    if isinstance(value, str) and value.lstrip()[:1] in {"=", "+", "-", "@", "\t", "\r"}:
+        return "'" + value
+    return value
+
+
+@app.get("/api/reports/settlements.csv")
+def settlements_csv():
+    with closing(db()) as con, con:
+        rows = con.execute("""
+            SELECT p.id, p.settled_at, p.sport, p.event, p.market,
+                   p.total_stake, p.expected_roi, p.actual_pnl,
+                   COALESCE(SUM(l.commission_paid), 0) AS commission_paid,
+                   SUM(CASE WHEN l.close_type = 'cashout' THEN 1 ELSE 0 END) AS cashout_legs
+            FROM positions p
+            LEFT JOIN position_legs l ON l.position_id = p.id
+            WHERE p.status = 'Settled'
+            GROUP BY p.id
+            ORDER BY p.settled_at DESC, p.id DESC
+        """).fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "position_id", "settled_at", "sport", "event", "market",
+        "planned_stake", "expected_roi", "actual_pnl", "commission_paid", "cashout_legs",
+    ])
+    for row in rows:
+        writer.writerow([csv_safe_cell(row[key]) for key in row.keys()])
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="arbitrage-settlements.csv"'},
+    )
+
+
+@app.get("/api/positions")
+def positions():
+    with closing(db()) as con, con:
+        rows = con.execute("""
+            SELECT *
+            FROM positions
+            ORDER BY id DESC
+            LIMIT 200
+        """).fetchall()
+
+        result = []
+
+        for row in rows:
+            item = dict(row)
+
+            legs = con.execute("""
+                SELECT
+                    position_legs.*,
+                    accounts.owner,
+                    accounts.bookmaker
+                FROM position_legs
+                JOIN accounts
+                    ON accounts.id = position_legs.account_id
+                WHERE position_legs.position_id = ?
+                ORDER BY position_legs.id
+            """, (row["id"],)).fetchall()
+
+            item["legs"] = [dict(leg) for leg in legs]
+            result.append(item)
+
+    return result
+
+
+@app.post("/api/positions/{position_id}/legs/{leg_id}/settle")
+def settle_leg(position_id: int, leg_id: int, req: SettleLeg, request: Request):
+    return close_position_leg(position_id, leg_id, req, request, "settlement")
+
+
+@app.post("/api/positions/{position_id}/legs/{leg_id}/cashout")
+def cashout_leg(position_id: int, leg_id: int, req: CashoutLeg, request: Request):
+    if not req.manual_confirmation:
+        raise HTTPException(400, "Confirm the full cashout was completed and credited by the bookmaker.")
+    return close_position_leg(position_id, leg_id, req, request, "cashout")
+
+
+def close_position_leg(position_id, leg_id, req, request, close_type):
+    with closing(db()) as con, con:
+        # Serialize concurrent settlement requests before checking the settled flag.
+        con.execute("BEGIN IMMEDIATE")
+        position = con.execute("""
+            SELECT *
+            FROM positions
+            WHERE id = ?
+        """, (position_id,)).fetchone()
+
+        if not position:
+            raise HTTPException(404, "Position not found.")
+
+        if position["status"] not in ("Open", "Unmatched"):
+            raise HTTPException(409, "Position is not open or unmatched.")
+
+        leg = con.execute("""
+            SELECT *
+            FROM position_legs
+            WHERE id = ? AND position_id = ?
+        """, (leg_id, position_id)).fetchone()
+
+        if not leg:
+            raise HTTPException(404, "Position leg not found.")
+
+        if leg["settled"]:
+            raise HTTPException(409, "This leg is already settled.")
+        if not leg["accepted"]:
+            raise HTTPException(409, "A leg that was not accepted cannot be settled.")
+
+        commission_pct = float(leg["commission_pct"] or 0)
+        gross_profit = max(req.actual_return - leg["stake"], 0)
+        # Cashout input is the final net credit, already after all fees.
+        commission_paid = 0.0 if close_type == "cashout" else round(
+            gross_profit * commission_pct / 100,
+            2,
+        )
+
+        con.execute("""
+            UPDATE position_legs
+            SET settled = 1, actual_return = ?, commission_paid = ?, close_type = ?
+            WHERE id = ?
+        """, (req.actual_return, commission_paid, close_type, leg_id))
+
+        con.execute("""
+            INSERT INTO account_transactions (
+                account_id, transaction_type, amount,
+                description, reference_id
+            )
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            leg["account_id"],
+            "cashout_return" if close_type == "cashout" else "settlement_return",
+            round(req.actual_return - commission_paid, 2),
+            f"Position {position_id} {close_type} return after commission",
+            leg_id,
+        ))
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            (
+                "position_leg_cashed_out" if close_type == "cashout" else "position_leg_settled",
+                json.dumps({
+                    "position_id": position_id,
+                    "leg_id": leg_id,
+                    "actual_return": req.actual_return,
+                    "commission_paid": commission_paid,
+                    "close_type": close_type,
+                    "recorded_by": request.state.auth_user["username"],
+                    "notes": req.notes,
+                }),
+            ),
+        )
+
+        remaining = con.execute("""
+            SELECT COUNT(*) AS total
+            FROM position_legs
+            WHERE position_id = ? AND settled = 0
+        """, (position_id,)).fetchone()["total"]
+
+        if remaining > 0:
+            create_user_notifications(
+                con,
+                "position_leg_cashed_out" if close_type == "cashout" else "position_leg_settled",
+                position_id,
+                "Position leg cashed out" if close_type == "cashout" else "Position leg settled",
+                f"{position['event']}: one leg closed by {close_type}; {remaining} accepted or pending leg(s) remain.",
+            )
+            return {
+                "ok": True,
+                "leg_settled": True,
+                "position_status": position["status"],
+                "remaining_legs": remaining,
+                "commission_paid": commission_paid,
+                "close_type": close_type,
+                "message": (
+                    "One leg closed. Full position exposure remains "
+                    "committed until every accepted leg is closed."
+                ),
+            }
+
+        totals = con.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN accepted = 1 THEN stake ELSE 0 END), 0) AS total_stake,
+                COALESCE(SUM(CASE WHEN accepted = 1 THEN actual_return ELSE 0 END), 0) AS total_return,
+                COALESCE(SUM(commission_paid), 0) AS total_commission
+            FROM position_legs
+            WHERE position_id = ?
+        """, (position_id,)).fetchone()
+
+        pnl = round(
+            float(totals["total_return"]) -
+            float(totals["total_stake"]) -
+            float(totals["total_commission"]),
+            2,
+        )
+
+        con.execute("""
+            UPDATE positions
+            SET status = 'Settled', settled_at = ?,
+                actual_pnl = ?
+            WHERE id = ?
+        """, (now_text(), pnl, position_id))
+
+        allocation = allocate_realised_profit(
+            con, position_id, pnl
+        )
+
+        con.execute("""
+            INSERT INTO audit_log(action, details)
+            VALUES (?, ?)
+        """, (
+            "position_settled",
+            json.dumps({
+                "position_id": position_id,
+                "actual_pnl": pnl,
+                "total_commission": totals["total_commission"],
+                "allocation": allocation,
+            }),
+        ))
+
+        create_user_notifications(
+            con,
+            "position_settled",
+            position_id,
+            "Position settled",
+            f"{position['event']}: net P/L {pnl:.2f}.",
+        )
+        push_payload = {
+            "title": "Position settled",
+            "body": f"{position['event']}: net P/L {pnl:.2f}.",
+            "position_id": position_id,
+            "event_type": "position_settled",
+        }
+        from app import push_delivery
+        push_delivery.enqueue_with_connection(con, push_payload)
+
+    send_push(push_payload)
+    return {
+        "ok": True,
+        "position_status": "Settled",
+        "actual_pnl": pnl,
+        "total_commission": totals["total_commission"],
+        "close_type": close_type,
+        **allocation,
+        "message": (
+            "Unmatched exposure closed after every accepted leg was closed."
+            if position["status"] == "Unmatched"
+            else "Every accepted leg is closed. Position exposure released."
+        ),
+    }
+
+
+# ============================================================
+# SETTLEMENT BUFFER
+# ============================================================
+
+@app.get("/api/buffer")
+def buffer_status():
+    with closing(db()) as con, con:
+        state = get_buffer_state(con)
+
+        rows = con.execute("""
+            SELECT *
+            FROM buffer_ledger
+            ORDER BY id DESC
+            LIMIT 100
+        """).fetchall()
+
+    return {
+        **state,
+        "entries": [dict(row) for row in rows],
+    }
+
+
+@app.post("/api/buffer/commit")
+def commit_buffer(req: BufferCommit):
+    with closing(db()) as con, con:
+        state = get_buffer_state(con)
+
+        if state["overdue_items"] > 0:
+            raise HTTPException(
+                409,
+                "Buffer already has an overdue commitment.",
+            )
+
+        if req.amount > state["available"]:
+            raise HTTPException(
+                409,
+                "Settlement buffer limit would be exceeded.",
+            )
+
+        if req.position_id is not None:
+            position = con.execute("""
+                SELECT id FROM positions WHERE id = ?
+            """, (req.position_id,)).fetchone()
+
+            if not position:
+                raise HTTPException(404, "Position not found.")
+
+        due_at = (
+            now() + timedelta(hours=BUFFER_DEADLINE_HOURS)
+        ).isoformat()
+
+        entry_id = con.execute("""
+            INSERT INTO buffer_ledger (
+                position_id, amount, status, due_at, description
+            )
+            VALUES (?, ?, 'committed', ?, ?)
+        """, (
+            req.position_id,
+            req.amount,
+            due_at,
+            req.description,
+        )).lastrowid
+
+        con.execute("""
+            INSERT INTO audit_log(action, details)
+            VALUES (?, ?)
+        """, (
+            "buffer_committed",
+            json.dumps({
+                "entry_id": entry_id,
+                "amount": req.amount,
+                "due_at": due_at,
+            }),
+        ))
+
+    return {
+        "ok": True,
+        "buffer_entry_id": entry_id,
+        "amount": req.amount,
+        "due_at": due_at,
+        "message": "Buffer commitment recorded.",
+    }
+
+
+@app.post("/api/buffer/{entry_id}/resolve")
+def resolve_buffer(entry_id: int, req: BufferResolve):
+    with closing(db()) as con, con:
+        row = con.execute("""
+            SELECT *
+            FROM buffer_ledger
+            WHERE id = ?
+        """, (entry_id,)).fetchone()
+
+        if not row:
+            raise HTTPException(404, "Buffer entry not found.")
+
+        if row["status"] != "committed":
+            raise HTTPException(
+                409,
+                "Buffer entry is not awaiting resolution.",
+            )
+
+        con.execute("""
+            UPDATE buffer_ledger
+            SET status = 'resolved', resolved_at = ?,
+                description = ?
+            WHERE id = ?
+        """, (
+            now_text(),
+            req.notes or row["description"],
+            entry_id,
+        ))
+
+        con.execute("""
+            INSERT INTO audit_log(action, details)
+            VALUES (?, ?)
+        """, (
+            "buffer_resolved",
+            json.dumps({"entry_id": entry_id}),
+        ))
+
+    return {
+        "ok": True,
+        "message": (
+            "Buffer commitment marked resolved. "
+            "Verify the actual funds have been replenished."
+        ),
+    }
+
+
+# ============================================================
+# LEGACY SET ROUTES - RETAINED FOR COMPATIBILITY
+# ============================================================
+
+@app.get("/api/sets")
+def sets():
+    with closing(db()) as con, con:
+        rows = con.execute("""
+            SELECT *
+            FROM sets
+            ORDER BY created_at DESC
+            LIMIT 100
+        """).fetchall()
+
+    return {
+        "items": [dict(row) for row in rows],
+        "notice": "Use /api/positions for the upgraded position system.",
+    }
+
+
+# ============================================================
+# EMAIL AND PUSH NOTIFICATIONS
+# ============================================================
 
 def send_email(subject, body):
     host = os.getenv("SMTP_HOST")
     user = os.getenv("SMTP_USER")
     password = os.getenv("SMTP_PASSWORD")
     to = os.getenv("ALERT_EMAIL")
+
     if not all([host, user, password, to]):
         return False
+
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = os.getenv("SMTP_FROM", user)
     msg["To"] = to
     msg.set_content(body)
+
     port = int(os.getenv("SMTP_PORT", "587"))
+
     with smtplib.SMTP(host, port, timeout=15) as server:
         server.starttls(context=ssl.create_default_context())
         server.login(user, password)
         server.send_message(msg)
+
     return True
 
-def send_push(payload):
-    # Push delivery is activated after VAPID keys are configured and a device subscribes.
+
+def send_push(payload, user_id=None):
     try:
-        from pywebpush import webpush, WebPushException
-        pub = os.getenv("VAPID_PUBLIC_KEY")
-        priv = os.getenv("VAPID_PRIVATE_KEY")
-        subject = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com")
-        if not pub or not priv:
-            return 0
-        with db() as con:
-            rows = con.execute("SELECT subscription_json FROM push_subscriptions").fetchall()
-        sent = 0
-        for row in rows:
-            try:
-                webpush(json.loads(row["subscription_json"]), json.dumps(payload),
-                        vapid_private_key=priv,
-                        vapid_claims={"sub": subject})
-                sent += 1
-            except Exception:
-                pass
-        return sent
+        from app import push_delivery
+
+        push_delivery.enqueue(payload, user_id=user_id)
+        return push_delivery.deliver_due()["sent"]
     except Exception:
         return 0
 
-@app.on_event("startup")
-def startup():
-    init_db()
-
-@app.get("/")
-def home():
-    return FileResponse("static/index.html")
-
-@app.get("/api/health")
-def health():
-    return {"ok": True, "service": "arb-control-api", "mode": "manual-confirmation-only"}
-
-@app.get("/api/config")
-def config():
-    return {"bankroll": BANKROLL, "stake_per_set": STAKE_PER_SET,
-            "max_open_sets": MAX_OPEN_SETS, "max_open_exposure": MAX_OPEN_EXPOSURE,
-            "min_net_roi": MIN_NET_ROI,
-            "sports": ["Soccer", "Tennis", "Basketball / NBA", "NRL", "AFL", "Cricket"],
-            "horse_racing": "planned phase 2"}
-
-@app.post("/api/scan")
-def scan(candidate: Candidate):
-    result = calculate(candidate)
-    if result["roi"] < MIN_NET_ROI:
-        return {"qualified": False, "reason": "Below 1.5% minimum net ROI",
-                **result, "candidate": candidate.model_dump()}
-    opp_id = str(uuid.uuid4())
-    data = candidate.model_dump()
-    with db() as con:
-        con.execute("""INSERT INTO opportunities VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (opp_id, now(), candidate.sport, candidate.event, candidate.market,
-             json.dumps(data["outcomes"]), result["sum_inverse"], result["roi"],
-             json.dumps(result["stakes"]), "Candidate"))
-    body = (f"{candidate.sport}: {candidate.event}\n{candidate.market}\n"
-            f"Net theoretical ROI: {result['roi']:.2%}\n"
-            f"Total stake: ${candidate.total_stake:.2f}\n"
-            + "\n".join(f"{o.selection} / {o.bookmaker}: ${result['stakes'][i]:.2f} at {o.odds}"
-                        for i,o in enumerate(candidate.outcomes))
-            + "\nManual verification required. No bets have been placed.")
-    email_sent = False
-    try: email_sent = send_email("Arbitrage candidate detected", body)
-    except Exception: pass
-    push_count = send_push({"title": "Arbitrage candidate", "body": f"{candidate.event} • {result['roi']:.2%} theoretical ROI"})
-    return {"qualified": True, "opportunity_id": opp_id, **result,
-            "email_sent": email_sent, "push_devices_notified": push_count,
-            "candidate": data}
-
-@app.get("/api/opportunities")
-def opportunities():
-    with db() as con:
-        rows = con.execute("SELECT * FROM opportunities ORDER BY created_at DESC LIMIT 100").fetchall()
-    return [dict(r) for r in rows]
-
-@app.get("/api/sets")
-def sets():
-    with db() as con:
-        rows = con.execute("SELECT * FROM sets ORDER BY created_at DESC LIMIT 100").fetchall()
-        active = con.execute("SELECT COUNT(*) n, COALESCE(SUM(total_stake),0) exposure FROM sets WHERE status='Open'").fetchone()
-    return {"items": [dict(r) for r in rows], "open_sets": active["n"],
-            "open_exposure": active["exposure"],
-            "available_slots": max(0, MAX_OPEN_SETS-active["n"]),
-            "remaining_exposure": max(0, MAX_OPEN_EXPOSURE-active["exposure"])}
-
-@app.post("/api/sets/open")
-def open_set(req: OpenSet):
-    if not req.manual_confirmation:
-        raise HTTPException(400, "Manual confirmation is required.")
-    with db() as con:
-        opp = con.execute("SELECT * FROM opportunities WHERE id=?", (req.opportunity_id,)).fetchone()
-        if not opp: raise HTTPException(404, "Opportunity not found.")
-        active = con.execute("SELECT COUNT(*) n, COALESCE(SUM(total_stake),0) exposure FROM sets WHERE status='Open'").fetchone()
-        if active["n"] >= MAX_OPEN_SETS: raise HTTPException(409, "Five simultaneous sets already open.")
-        if active["exposure"] + STAKE_PER_SET > MAX_OPEN_EXPOSURE:
-            raise HTTPException(409, "Open exposure limit would be exceeded.")
-        set_id = str(uuid.uuid4())
-        profit = STAKE_PER_SET * float(opp["roi"])
-        con.execute("INSERT INTO sets VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (set_id, req.opportunity_id, now(), opp["sport"], opp["event"], opp["market"],
-             STAKE_PER_SET, opp["roi"], profit, "Open", None, req.notes))
-        con.execute("UPDATE opportunities SET status='Opened' WHERE id=?", (req.opportunity_id,))
-    return {"ok": True, "set_id": set_id, "message": "Set recorded as open. This did not place any bookmaker bets."}
-
-@app.post("/api/sets/{set_id}/settle")
-def settle(set_id: str, req: SettleSet):
-    with db() as con:
-        row = con.execute("SELECT * FROM sets WHERE id=?", (set_id,)).fetchone()
-        if not row: raise HTTPException(404, "Set not found.")
-        if row["status"] != "Open": raise HTTPException(409, "Set is not open.")
-        con.execute("UPDATE sets SET status='Settled', actual_pnl=?, notes=? WHERE id=?",
-                    (req.actual_pnl, req.notes, set_id))
-    return {"ok": True}
-
 @app.post("/api/push/subscribe")
-def subscribe(req: PushSub):
-    with db() as con:
-        con.execute("INSERT OR IGNORE INTO push_subscriptions(subscription_json) VALUES (?)",
-                    (json.dumps(req.subscription),))
+def subscribe(req: PushSub, request: Request):
+    endpoint = req.subscription.get("endpoint")
+    keys = req.subscription.get("keys")
+    try:
+        parsed = urlsplit(endpoint) if isinstance(endpoint, str) else None
+    except ValueError:
+        parsed = None
+    if (
+        parsed is None
+        or not isinstance(endpoint, str)
+        or len(endpoint) > 4096
+        or parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or not isinstance(keys, dict)
+        or not isinstance(keys.get("p256dh"), str)
+        or not isinstance(keys.get("auth"), str)
+        or not keys.get("p256dh")
+        or not keys.get("auth")
+        or len(keys.get("p256dh", "")) > 512
+        or len(keys.get("auth", "")) > 512
+    ):
+        raise HTTPException(400, "A valid HTTPS push subscription is required.")
+
+    host = parsed.hostname.lower().rstrip(".")
+    allowed_push_host = (
+        host == "fcm.googleapis.com"
+        or host == "web.push.apple.com"
+        or host.endswith(".push.services.mozilla.com")
+    )
+    if not allowed_push_host:
+        raise HTTPException(400, "The push subscription host is not an approved browser push service.")
+    if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+        raise HTTPException(400, "The push subscription host is not allowed.")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address is not None and not address.is_global:
+        raise HTTPException(400, "The push subscription host is not allowed.")
+
+    subscription_json = json.dumps(req.subscription, separators=(",", ":"), sort_keys=True)
+    if len(subscription_json.encode("utf-8")) > 8192:
+        raise HTTPException(400, "Push subscription data is too large.")
+    user_id = request.state.auth_user["id"]
+    with closing(db()) as con, con:
+        con.execute("""
+            INSERT INTO push_subscriptions (user_id, subscription_json)
+            VALUES (?, ?)
+            ON CONFLICT(subscription_json)
+            DO UPDATE SET user_id = excluded.user_id
+        """, (user_id, subscription_json))
+
     return {"ok": True}
+
+
+@app.get("/api/push/delivery-status")
+def push_delivery_status():
+    from app import push_delivery
+
+    return push_delivery.delivery_status()
+
 
 @app.get("/api/push/public-key")
 def push_key():
-    return {"public_key": os.getenv("VAPID_PUBLIC_KEY", "")}
+    return {
+        "public_key": os.getenv("VAPID_PUBLIC_KEY", "")
+    }
+
 
 @app.get("/manifest.webmanifest")
 def manifest():
-    return FileResponse("static/manifest.webmanifest", media_type="application/manifest+json")
+    return FileResponse(
+        "static/manifest.webmanifest",
+        media_type="application/manifest+json",
+    )
+
+
+if __name__ == "__main__":
+    initialise_system()
+    print("Arbitrage control database initialised.")
+

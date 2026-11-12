@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#10263d"><link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#2A2C5F"><link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <title>Arbitrage Control</title>
 <style>
@@ -19,20 +19,120 @@ label{font-size:12px;color:#526578;font-weight:650}.section{font-weight:750;marg
 .row{display:flex;justify-content:space-between;gap:10px;align-items:center}.pill{background:#e4f3e7;color:#24653a;padding:5px 8px;border-radius:20px;font-size:11px}
 .item{border-top:1px solid #edf0f3;padding:11px 0;font-size:13px}.warn{background:#fff5dd;padding:11px;border-radius:10px;font-size:12px;color:#775a12}
 small{font-size:11px;color:#728294}.hidden{display:none}
+
+.auth-gate{position:fixed;inset:0;z-index:1000;background:#eef3f7;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-gate.hidden{display:none}
+.auth-panel{width:min(100%,460px);margin:0}
+.auth-panel h2{margin-top:0}
+#authControls{margin-top:12px;justify-content:flex-end}
+#authControls button{padding:8px 10px}
+.vetting-card{border:2px solid #c7d9e8}
+.vetting-card button{white-space:nowrap}
+.vetting-dock{position:fixed;z-index:20;left:14px;right:14px;bottom:max(12px,env(safe-area-inset-bottom));padding:10px;background:#10263d;border-radius:14px;box-shadow:0 5px 24px #10263d55}
+.vetting-dock.hidden{display:none}
+.vetting-dock button{width:100%;background:#24a16b}
+dialog{border:0;border-radius:18px;padding:0;width:min(760px,calc(100% - 24px));max-height:90vh;box-shadow:0 16px 60px #10263d55;color:#15283b}
+dialog::backdrop{background:#0b1b2b99}
+.dialog-body{padding:18px;overflow:auto;max-height:90vh}
+.dialog-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.dialog-head h2{margin:0 0 8px;font-size:20px}
+.dialog-close{padding:8px 11px}
+.check-row{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-top:1px solid #edf0f3;line-height:1.4}
+.check-row input{width:auto;margin:2px 0 0;flex:none}
+.auth-form{margin-top:14px}
+.auth-form button{width:100%;margin-top:6px}
+#vettingLegAccounts .item,#manualLegChecks .item{background:#f7fafc;border-radius:10px;padding:12px;margin:9px 0;border:1px solid #e4ebf1}
+.result-message{padding:10px;margin-top:10px;border-radius:8px;background:#eef4f8}
+@media(min-width:720px){.vetting-dock{left:auto;right:24px;width:320px}}
+
+/* Unified palette: dashboard, authentication, and assisted-vetting */
+:root{
+ --app-bg:#F6F7FB;--surface:#FFFFFF;--ink:#2B2024;--muted-ink:#3B4A6B;
+ --navy:#2A2C5F;--indigo:#393C83;--blue:#23B2DA;--aqua:#43D9E7;--mint:#5BE7C4;
+ --lavender:#DAEAF7;--rose:#D59CC5;--magenta:#BE5CA9;--border:#EADADA;
+ --alert:#A80139;--hot-pink:#FD0053;--coral:#F23456;--sky:#4FC0E8;
+ --teal:#3EC4D0;--violet:#7A56D0;--deep-teal:#0C8ABC;--gold:#F1D43A;
+ color-scheme:light;
+}
+body{color:var(--ink);background:var(--app-bg)}
+header{background:linear-gradient(135deg,var(--navy),var(--indigo) 62%,var(--deep-teal));color:var(--surface)}
+header .white{color:var(--lavender)}
+header .pill{background:var(--aqua);color:var(--navy)}
+.card{background:var(--surface);border:1px solid var(--border);box-shadow:0 5px 20px #2A2C5F12}
+.metric{color:var(--navy)}
+.muted,.label,small{color:var(--muted-ink)}
+button{background:linear-gradient(120deg,var(--blue),var(--aqua));color:var(--navy);box-shadow:0 2px 8px #23B2DA2b;transition:filter .15s,transform .15s}
+button:hover:not(:disabled){filter:saturate(1.12) brightness(.98);transform:translateY(-1px)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--magenta);outline-offset:2px}
+button.secondary{background:var(--lavender);color:var(--navy);box-shadow:none}
+input,select{color:var(--ink);background:var(--surface);border-color:#3B4A6B55}
+label{color:var(--muted-ink)}
+.pill{background:var(--mint);color:var(--navy)}
+.item,.check-row{border-color:var(--border)}
+.warn{background:#F1D43A35;border:1px solid #F1D43A;color:#5A4510}
+.auth-gate{background:linear-gradient(145deg,#DAEAF7,#D59CC555 55%,#43D9E733)}
+.auth-panel{border-top:4px solid var(--magenta)}
+.vetting-card{border-color:var(--sky);background:linear-gradient(145deg,var(--surface),#DAEAF744)}
+.vetting-dock{background:linear-gradient(120deg,var(--navy),var(--indigo));box-shadow:0 8px 28px #2A2C5F55}
+.vetting-dock button{background:linear-gradient(120deg,var(--magenta),var(--rose));color:var(--navy)}
+dialog{background:var(--surface);color:var(--ink);border:1px solid var(--rose)}
+dialog::backdrop{background:#2B2024B8}
+#vettingLegAccounts .item,#manualLegChecks .item{background:#DAEAF755;border-color:#4FC0E855}
+.result-message{background:#43D9E733;border:1px solid var(--teal);color:var(--navy)}
+.error,.error-message,.pill.bad{background:#FD00531A;color:var(--alert);border-color:var(--coral)}
+.pill.good{background:#5BE7C4;color:var(--navy)}
+a{color:var(--deep-teal)}
+@media(prefers-reduced-motion:reduce){button{transition:none}button:hover:not(:disabled){transform:none}}
+
 </style></head>
 <body>
-<header><div class="row"><div><h1>Arbitrage Control</h1><div class="white">Cloud scanner • iPhone dashboard</div></div><span class="pill">MANUAL BETTING</span></div></header>
+<header><div class="row"><div><h1>Arbitrage Control</h1><div class="white">Cloud scanner • iPhone dashboard</div></div><span class="pill">MANUAL BETTING</span></div><div id="authControls" class="row hidden"><span>Signed in as <b id="userName"></b></span><button class="secondary" type="button" onclick="logout()">Sign out</button></div></header>
+<div class="auth-gate hidden" id="authGate">
+ <div class="card auth-panel">
+  <h2 id="authTitle">Sign in</h2>
+  <p class="muted" id="authIntro">Use your Hunta or Jay account to access the dashboard.</p>
+  <form id="loginForm" class="auth-form">
+   <label for="loginUsername">Account</label><select id="loginUsername"><option value="hunta">Hunta</option><option value="jay">Jay</option></select>
+   <label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" required>
+   <button type="submit">Sign in</button>
+  </form>
+  <form id="setupForm" class="auth-form hidden">
+   <label for="setupToken">One-time setup token</label><input id="setupToken" type="password" autocomplete="off" required>
+   <label for="setupHuntaPassword">Hunta password (12 characters minimum)</label><input id="setupHuntaPassword" type="password" autocomplete="new-password" minlength="12" required>
+   <label for="setupJayPassword">Jay password (12 characters minimum)</label><input id="setupJayPassword" type="password" autocomplete="new-password" minlength="12" required>
+   <button type="submit">Create both accounts</button>
+  </form>
+  <p id="authMessage" class="warn hidden" role="status" aria-live="polite"></p>
+ </div>
+</div>
 <div class="grid">
  <div class="card"><div class="label">Starting bankroll</div><div class="metric" id="bankroll">$10,000</div></div>
  <div class="card"><div class="label">Open exposure</div><div class="metric" id="exposure">$0</div></div>
- <div class="card"><div class="label">Active sets</div><div class="metric" id="active">0 / 5</div></div>
+ <div class="card"><div class="label">Open positions</div><div class="metric" id="active">0</div></div>
  <div class="card"><div class="label">Available capacity</div><div class="metric" id="capacity">$2,500</div></div>
 </div>
 <div class="card">
  <div class="row"><b>Scanner status</b><span class="pill" id="status">Connecting</span></div>
- <p class="muted">Minimum net theoretical ROI: 1.5% • $500 combined stake per set. This starter build receives candidate odds through its API; it is not yet connected to a live odds provider.</p>
+ <p class="muted">Minimum net theoretical ROI: 1.5% • $500 combined stake per set. The live odds feed is on-demand and provides candidates only. Verify prices, rules, limits, and account availability manually; all bets remain manual.</p>
  <button class="secondary" onclick="enablePush()">Enable iPhone push notifications</button>
 </div>
+<div class="card vetting-card">
+ <div class="row">
+  <div><b>Assisted vetting</b><div class="muted" id="vettingStatus" aria-live="polite">Run a qualifying scan to open the review checklist.</div></div>
+  <button class="secondary" id="openVettingButton" type="button" disabled onclick="openVetting()">Open assisted vetting</button>
+ </div>
+</div>
+<div class="section">Live odds feed</div>
+<div class="card">
+ <p class="muted">Fetch Australian head-to-head odds on demand. A returned opportunity is only a candidate; verify matching rules and current prices manually.</p>
+ <button class="secondary" type="button" onclick="loadOddsSports()">Load available sports</button>
+ <label for="oddsSport">Sport</label><select id="oddsSport"><option value="">Load sports first</option></select>
+ <button type="button" onclick="scanLiveOdds()">Scan Australian odds now</button>
+ <div id="liveOddsStatus" class="muted" role="status" aria-live="polite"></div>
+ <div id="liveOddsResults"></div>
+</div>
+<div class="section">Bookmaker account balances</div>
+<div class="card" id="accountBalances">Loading account balances…</div>
 <div class="section">Test an opportunity</div>
 <div class="card">
  <label>Sport</label><select id="sport"><option>Soccer</option><option>Tennis</option><option>Basketball / NBA</option><option>NRL</option><option>AFL</option><option>Cricket</option></select>
@@ -45,47 +145,491 @@ small{font-size:11px;color:#728294}.hidden{display:none}
 </div>
 <div class="section">Open sets</div><div class="card" id="sets">Loading…</div>
 <div class="section">Recent opportunities</div><div class="card" id="opps">Loading…</div>
+<div class="section">Notifications</div><div class="card" id="notifications" aria-live="polite">Loading notifications…</div>
+<div class="section">Performance and reports</div>
+<div class="card"><div id="reportSummary" class="muted">Loading report summary…</div><a href="/api/reports/settlements.csv">Download settlement CSV</a></div>
+<div class="section">Backups and recovery</div>
+<div class="card"><button class="secondary" type="button" onclick="createBackup()">Create verified backup now</button><div id="backupList" class="muted">Loading backup list…</div><small>Backups are stored on the configured app volume. Schedule off-site copies separately.</small></div>
 <div class="warn">Important: the scanner is a decision-support tool, not a guarantee. Verify identical markets, all outcomes, current odds, account limits and settlement rules. A recorded set does not place bets.</div>
+<div class="vetting-dock hidden" id="vettingDock"><button type="button" onclick="openVetting()">Open assisted vetting</button></div>
+<dialog id="vettingDialog" aria-labelledby="vettingTitle">
+ <div class="dialog-body">
+  <div class="dialog-head"><div><h2 id="vettingTitle">Assisted vetting</h2><div class="muted">Review the candidate, then place each bet yourself at the bookmaker.</div></div><button class="secondary dialog-close" type="button" onclick="closeVetting()">Close</button></div>
+  <div class="result-message" id="vettingCandidateSummary"></div>
+  <div id="vettingReviewStage">
+   <div class="section">Before placing anything</div>
+   <label class="check-row"><input type="checkbox" class="vetting-check">The event, market, start time and settlement terms match at both bookmakers.</label>
+   <label class="check-row"><input type="checkbox" class="vetting-check">Every possible outcome is covered exactly once, with no duplicate or missing selection.</label>
+   <label class="check-row"><input type="checkbox" class="vetting-check">The displayed odds are current, available to my accounts and still accepted by each bookmaker.</label>
+   <label class="check-row"><input type="checkbox" class="vetting-check">Stake limits, available balance, commission and account restrictions have been checked.</label>
+   <label class="check-row"><input type="checkbox" class="vetting-check">I understand the calculated return is theoretical and can change if a price moves or a leg is rejected.</label>
+   <div class="section">Bookmaker accounts</div>
+   <p class="muted">Choose which Hunta and Jay bookmaker accounts this position will use. Either signed-in person may review and manually place both legs.</p>
+   <div id="vettingLegAccounts"></div>
+   <p class="warn hidden" id="vettingUnsupported"></p>
+   <button id="beginPlacementButton" type="button" disabled onclick="beginManualPlacement()">Continue to manual placement</button>
+  </div>
+  <div id="manualPlacementStage" class="hidden">
+   <div class="section">Place and confirm each leg</div>
+   <p class="warn">Open each bookmaker yourself and place the displayed stake. This app does not open bookmaker sites or place bets.</p>
+   <div id="manualLegChecks"></div>
+   <label class="check-row"><input id="allPlaced" type="checkbox">I have personally verified that both bets were accepted at the displayed odds and stakes.</label>
+   <p id="vettingMessage" class="result-message hidden" role="status" aria-live="polite"></p>
+   <button id="recordPositionButton" type="button" disabled onclick="recordPosition()">Record manually placed position</button>
+   <button class="secondary" id="recordUnmatchedButton" type="button" disabled onclick="recordUnmatchedPosition()">Record one accepted leg as unmatched</button>
+   <small>If the other bookmaker rejected the bet, recording the accepted leg pauses new positions until its actual result is settled.</small>
+  </div>
+ </div>
+</dialog>
+<dialog id="cashoutDialog">
+ <div class="dialog-body">
+  <div class="dialog-head"><h2>Record completed full cashout</h2><button class="secondary dialog-close" type="button" onclick="document.getElementById('cashoutDialog').close()">Cancel</button></div>
+  <p class="muted">Record a full cashout already completed at the bookmaker. Partial cashouts are not supported. Exposure stays committed until every accepted leg is closed.</p>
+  <p id="cashoutLegDescription"></p>
+  <form id="cashoutForm">
+   <label for="cashoutAmount">Net amount credited (AUD)</label><input id="cashoutAmount" type="number" min="0" step="0.01" inputmode="decimal" required>
+   <small>Include returned stake and enter the final amount after all fees. No additional commission will be deducted.</small>
+   <p><label for="cashoutNotes">Bookmaker cashout reference or note</label><input id="cashoutNotes" maxlength="500" required></p>
+   <label class="check-row"><input id="cashoutConfirmed" type="checkbox" required>The bookmaker has fully closed this leg and credited the amount entered above.</label>
+   <div id="cashoutMessage" class="result-message hidden" role="status"></div>
+   <button id="cashoutSubmit" type="submit">Record completed cashout</button>
+  </form>
+ </div>
+</dialog>
 <script>
-let legCount=2, lastOpportunity=null;
+let legCount=2, lastOpportunity=null, lastCandidate=null, currentUser=null, accountsCache=[], positionsCache=[], selectedLegAccounts=[], refreshTimer=null, liveCandidateRows=[];
 function addLeg(){if(legCount>=3)return;legCount++;renderLegs()}
 function renderLegs(){
- const el=document.getElementById('legs');el.innerHTML='';
+ const el=document.getElementById('legs');const saved={};el.querySelectorAll('input').forEach(x=>saved[x.id]=x.value);el.innerHTML='';
  for(let i=1;i<=legCount;i++){
-  const d=document.createElement('div');d.innerHTML=`<div class="section">Outcome ${i}</div><label>Selection</label><input id="sel${i}" value="${i===1?'Home':i===2?'Away':'Draw'}"><label>Bookmaker</label><input id="book${i}" value="${i===1?'Bookmaker A':i===2?'Bookmaker B':'Bookmaker C'}"><label>Decimal odds</label><input id="odds${i}" type="number" min="1.01" step="0.01" value="${i===1?'2.10':i===2?'2.05':'3.50'}"><label>Commission % (if applicable)</label><input id="comm${i}" type="number" min="0" max="99" step="0.1" value="0">`;el.appendChild(d)
+  const d=document.createElement('div');
+  d.innerHTML='<div class="section">Outcome '+i+'</div><label>Selection</label><input id="sel'+i+'" value="'+(i===1?'Home':i===2?'Away':'Draw')+'"><label>Bookmaker</label><input id="book'+i+'" value="'+(i===1?'Bookmaker A':i===2?'Bookmaker B':'Bookmaker C')+'"><label>Decimal odds</label><input id="odds'+i+'" type="number" min="1.01" step="0.01" value="'+(i===1?'2.10':i===2?'2.05':'3.50')+'"><label>Commission % (if applicable)</label><input id="comm'+i+'" type="number" min="0" max="99" step="0.1" value="0">';
+  el.appendChild(d)
  }
+ el.querySelectorAll('input').forEach(x=>{if(x.id in saved)x.value=saved[x.id]});
 }
-async function api(path,opts={}){let r=await fetch('/api'+path,{headers:{'Content-Type':'application/json'},...opts});let j=await r.json();if(!r.ok)throw Error(j.detail||'Request failed');return j}
+function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+function renderBackups(data){
+ const items=data.items||[];
+ document.getElementById('backupList').innerHTML=items.map(function(item){
+  return '<div class="item"><b>'+escapeHtml(item.name)+'</b><div class="muted">'+(Number(item.size_bytes)/1024).toFixed(1)+' KB • '+escapeHtml(item.created_at)+'</div></div>';
+ }).join('')||'<small>No backups found yet.</small>';
+}
+async function createBackup(){
+ try{
+  const result=await api('/backups/create',{method:'POST',body:'{}'});
+  alert(result.message+' '+result.name);
+  await refresh()
+ }catch(e){alert(e.message)}
+}
+function renderNotifications(data){
+ const items=data.items||[];
+ const target=document.getElementById('notifications');
+ target.innerHTML='<b>'+Number(data.unread_count||0)+' unread</b>'+(
+  items.map(function(item){
+   return '<div class="item"><div class="row"><b>'+escapeHtml(item.title)+'</b><small>'+escapeHtml(item.created_at)+'</small></div><div>'+escapeHtml(item.message)+'</div>'+
+    (item.read_at?'':'<button class="secondary" type="button" onclick="markNotificationRead('+Number(item.id)+')">Mark read</button>')+'</div>';
+  }).join('')||'<small>No notifications yet.</small>'
+ )
+}
+async function markNotificationRead(id){
+ try{await api('/notifications/'+Number(id)+'/read',{method:'POST',body:'{}'});await refresh()}
+ catch(e){document.getElementById('notifications').textContent=e.message}
+}
+function renderReports(report){
+ const p=report.positions||{};
+ document.getElementById('reportSummary').textContent=
+  'Settled: '+Number(p.settled_positions||0)+' • Net realised P/L: $'+Number(p.net_realised_pnl||0).toFixed(2)+
+  ' • Commission: $'+Number(report.commission_paid||0).toFixed(2)+
+  ' • Reinvested: $'+Number(report.reinvested||0).toFixed(2)+
+  ' • Withdrawn: $'+Number(report.withdrawn||0).toFixed(2);
+}
+function renderAccounts(rows){
+ accountsCache=rows||[];
+ const target=document.getElementById('accountBalances');
+ target.innerHTML=rows.map(function(a){
+  const id=Number(a.id),owner=escapeHtml(a.owner),bookmaker=escapeHtml(a.bookmaker),balance=Number(a.balance).toFixed(2);
+  return '<div class="item"><b>'+owner+' — '+bookmaker+'</b><div class="row"><span>Recorded balance</span><b>$'+balance+'</b></div>'+
+   '<button class="secondary" onclick="setOpeningBalance('+id+')">Set starting balance</button> '+
+   '<button class="secondary" onclick="recordAccountTransaction('+id+',&#39;deposit&#39;)">Add funds</button> '+
+   '<button class="secondary" onclick="recordAccountTransaction('+id+',&#39;withdrawal&#39;)">Record withdrawal</button> '+
+   '<button class="secondary" onclick="reconcileAccount('+id+')">Reconcile balance</button></div>';
+ }).join('')||'<small>No bookmaker accounts configured.</small>';
+}
+async function setOpeningBalance(accountId){
+ const value=prompt('Enter the current available AUD balance. This can only be set before ledger activity.');
+ if(value===null)return;
+ const amount=Number(value);
+ if(!Number.isFinite(amount)||amount<0){alert('Enter a valid non-negative amount.');return}
+ try{
+  await api('/accounts/'+accountId+'/opening-balance',{method:'POST',body:JSON.stringify({amount:amount})});
+  await refresh();
+ }catch(e){alert(e.message)}
+}
+async function reconcileAccount(id){
+ const current=accountsCache.find(function(a){return Number(a.id)===Number(id)});
+ const actual=prompt('Enter the current bookmaker balance in AUD'+(current?' (recorded: '+Number(current.balance).toFixed(2)+')':'')+':');
+ if(actual===null)return;
+ const amount=Number(actual);
+ if(!Number.isFinite(amount)||amount<0){alert('Enter a valid non-negative balance.');return}
+ const reason=prompt('Briefly explain this reconciliation (for example, statement checked):');
+ if(reason===null||!reason.trim())return;
+ try{
+  const result=await api('/accounts/'+Number(id)+'/reconcile',{
+   method:'POST',
+   body:JSON.stringify({actual_balance:amount,reason:reason.trim()})
+  });
+  alert(result.message+' Current recorded balance: AUD '+Number(result.balance).toFixed(2)+'.');
+  await refresh()
+ }catch(e){alert(e.message)}
+}
+async function recordAccountTransaction(accountId,transactionType){
+ const value=prompt('Enter the AUD amount to '+transactionType+' for this bookmaker account.');
+ if(value===null)return;
+ const amount=Number(value);
+ if(!Number.isFinite(amount)||amount<=0){alert('Enter an amount greater than zero.');return}
+ const description=prompt('Add a short note for this ledger entry:','Manually recorded '+transactionType);
+ if(description===null)return;
+ try{
+  await api('/accounts/'+accountId+'/transactions',{method:'POST',body:JSON.stringify({transaction_type:transactionType,amount:amount,description:description})});
+  await refresh();
+ }catch(e){alert(e.message)}
+}
+function slug(value){return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'outcome'}
+async function api(path,opts={}){
+ const headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
+ const r=await fetch('/api'+path,Object.assign({credentials:'same-origin',headers:headers},opts));
+ let j={};try{j=await r.json()}catch(e){j={}}
+ if(!r.ok){if(r.status===401&&path!=='/auth/login'){showAuthGate(false)}throw Error(j.detail||'Request failed')}
+ return j
+}
+function showAuthGate(setup){
+ const gate=document.getElementById('authGate');gate.classList.remove('hidden');
+ document.getElementById('authControls').classList.add('hidden');
+ document.getElementById('authLoginPane');
+ document.getElementById('loginForm').classList.toggle('hidden',!!setup);
+ document.getElementById('setupForm').classList.toggle('hidden',!setup);
+ document.getElementById('authTitle').textContent=setup?'Set up Hunta and Jay accounts':'Sign in';
+ document.getElementById('authIntro').textContent=setup?'Enter the one-time setup token from the server environment, then set both passwords.':'Use your Hunta or Jay account to access the dashboard.';
+}
+function showAuthenticated(){
+ document.getElementById('authGate').classList.add('hidden');
+ document.getElementById('authControls').classList.remove('hidden');
+ document.getElementById('userName').textContent=currentUser.display_name;
+}
+function authError(message){
+ const el=document.getElementById('authMessage');el.textContent=message;el.classList.remove('hidden')
+}
+document.getElementById('loginForm').addEventListener('submit',async function(e){
+ e.preventDefault();const message=document.getElementById('authMessage');message.classList.add('hidden');
+ try{
+  const x=await api('/auth/login',{method:'POST',body:JSON.stringify({username:document.getElementById('loginUsername').value,password:document.getElementById('loginPassword').value})});
+  currentUser=x.user;document.getElementById('loginPassword').value='';showAuthenticated();await startDashboard();
+ }catch(err){authError(err.message)}
+});
+document.getElementById('setupForm').addEventListener('submit',async function(e){
+ e.preventDefault();const message=document.getElementById('authMessage');message.classList.add('hidden');
+ try{
+  await api('/auth/setup',{method:'POST',body:JSON.stringify({setup_token:document.getElementById('setupToken').value,hunta_password:document.getElementById('setupHuntaPassword').value,jay_password:document.getElementById('setupJayPassword').value})});
+  document.getElementById('setupToken').value='';document.getElementById('setupHuntaPassword').value='';document.getElementById('setupJayPassword').value='';
+  showAuthGate(false);authError('Accounts created. Sign in with either account.');
+ }catch(err){authError(err.message)}
+});
+async function logout(){
+ try{await api('/auth/logout',{method:'POST',body:'{}'})}catch(e){}
+ currentUser=null;lastOpportunity=null;lastCandidate=null;showAuthGate(false);updateVettingAvailability();
+}
+async function initialize(){
+ renderLegs();
+ try{
+  const s=await api('/auth/status');
+  if(s.setup_required){showAuthGate(true);return}
+  if(!s.authenticated){showAuthGate(false);return}
+  currentUser=s.user;showAuthenticated();await startDashboard();
+ }catch(e){showAuthGate(false);authError(e.message)}
+}
+async function startDashboard(){
+ await refresh();
+ if(!refreshTimer)refreshTimer=setInterval(refresh,15000)
+}
 async function refresh(){
  try{
-  const c=await api('/config'),s=await api('/sets'),o=await api('/opportunities');
+  const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts'),api('/reports/summary'),api('/notifications'),api('/backups')]);
+  const d=results[1],p=results[2],o=results[3],accountRows=results[4],report=results[5],notificationData=results[6],backupData=results[7];
+  positionsCache=p;
+  renderAccounts(accountRows);renderReports(report);renderNotifications(notificationData);renderBackups(backupData);
   document.getElementById('status').textContent='API online';
-  document.getElementById('bankroll').textContent='$'+c.bankroll.toLocaleString();
-  document.getElementById('exposure').textContent='$'+s.open_exposure.toLocaleString();
-  document.getElementById('active').textContent=s.open_sets+' / '+c.max_open_sets;
-  document.getElementById('capacity').textContent='$'+s.remaining_exposure.toLocaleString();
-  document.getElementById('sets').innerHTML=s.items.filter(x=>x.status==='Open').map(x=>`<div class="item"><b>${x.sport}: ${x.event}</b><div class="muted">${x.market} • $${x.total_stake} • ${(x.roi*100).toFixed(2)}% theoretical</div><button class="secondary" onclick="settle('${x.id}')">Record settlement</button></div>`).join('')||'<small>No open sets.</small>';
-  document.getElementById('opps').innerHTML=o.map(x=>`<div class="item"><b>${x.sport}: ${x.event}</b><div class="muted">${x.market} • ${(x.roi*100).toFixed(2)}% • ${x.status}</div></div>`).join('')||'<small>No opportunities yet.</small>';
- }catch(e){document.getElementById('status').textContent='API unavailable'}
+  document.getElementById('bankroll').textContent='$'+Number(d.starting_bankroll).toLocaleString();
+  document.getElementById('exposure').textContent='$'+Number(d.open_exposure).toLocaleString();
+  document.getElementById('active').textContent=String(d.open_positions);
+  document.getElementById('capacity').textContent='$'+Number(d.remaining_exposure).toLocaleString();
+  const openPositions=p.filter(function(x){return x.status==='Open'||x.status==='Unmatched'});
+  document.getElementById('sets').innerHTML=openPositions.map(function(x){
+   const legs=(x.legs||[]).map(function(l){
+    const settleButton=l.accepted&&!l.settled?' <button class="secondary" onclick="settle('+Number(x.id)+','+Number(l.id)+')">Record leg settlement</button> <button class="secondary" onclick="recordCashout('+Number(x.id)+','+Number(l.id)+')">Record full cashout</button>':'';
+    const legStatus=l.settled&&l.accepted?(l.close_type==='cashout'?'cashed out':'settled')+' • return $'+Number(l.actual_return).toFixed(2):(l.accepted?'accepted':'not accepted');
+    return '<div class="item">'+escapeHtml(l.owner)+' • '+escapeHtml(l.selection)+' at '+escapeHtml(l.bookmaker)+' • $'+Number(l.stake).toFixed(2)+' stake • '+legStatus+settleButton+'</div>';
+   }).join('');
+   const hedgeAction=x.status==='Unmatched'?'<button class="secondary" type="button" onclick="showHedgeForm('+Number(x.id)+')">Record manually accepted hedge</button><div id="hedge-form-'+Number(x.id)+'" class="hidden"></div>':'';
+   return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.status)+' • '+escapeHtml(x.market)+' • $'+Number(x.total_stake).toFixed(2)+' • '+(Number(x.expected_roi)*100).toFixed(2)+'% theoretical</div>'+legs+hedgeAction+'</div>';
+  }).join('')||'<small>No open positions.</small>';
+  document.getElementById('opps').innerHTML=o.map(function(x){return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • '+(Number(x.roi)*100).toFixed(2)+'% • '+escapeHtml(x.status)+'</div></div>'}).join('')||'<small>No opportunities yet.</small>';
+ }catch(e){document.getElementById('status').textContent=e.message==='Please sign in to use the arbitrage dashboard.'?'Sign in required':'API unavailable'}
+}
+async function loadOddsSports(){
+ const status=document.getElementById('liveOddsStatus');
+ status.textContent='Loading provider sports…';
+ try{
+  const result=await api('/odds/sports');
+  const active=(result.sports||[]).filter(function(s){return s.active});
+  document.getElementById('oddsSport').innerHTML=active.map(function(s){
+   return '<option value="'+escapeHtml(s.key)+'">'+escapeHtml(s.title||s.key)+'</option>';
+  }).join('')||'<option value="">No active sports</option>';
+  status.textContent='Loaded '+active.length+' active sports. No odds request has been made yet.';
+ }catch(e){status.textContent=e.message}
+}
+async function scanLiveOdds(){
+ const sportKey=document.getElementById('oddsSport').value;
+ if(!sportKey){document.getElementById('liveOddsStatus').textContent='Load and select a sport first.';return}
+ const status=document.getElementById('liveOddsStatus'),resultsEl=document.getElementById('liveOddsResults');
+ status.textContent='Fetching current Australian odds…';resultsEl.textContent='';
+ try{
+  const result=await api('/odds/scan/'+encodeURIComponent(sportKey));
+  liveCandidateRows=result.candidates||[];
+  status.textContent='Checked '+result.events_received+' events; '+result.qualified_count+' qualified candidates. Provider credits remaining: '+(result.quota.requests_remaining??'not reported')+'.';
+  resultsEl.innerHTML=liveCandidateRows.map(function(row,index){
+   return '<div class="item"><b>'+escapeHtml(row.candidate.event)+'</b><div class="muted">'+escapeHtml(row.candidate.market)+' • '+(Number(row.roi)*100).toFixed(2)+'% theoretical ROI • Updated '+escapeHtml(row.source_updated_at)+'</div><button class="secondary" onclick="selectLiveCandidate('+index+')">Review this candidate</button></div>';
+  }).join('')||'<small>No fresh qualifying candidates returned. Try again later.</small>';
+ }catch(e){status.textContent=e.message}
+}
+function selectLiveCandidate(index){
+ const row=liveCandidateRows[index];if(!row)return;
+ lastOpportunity=row;lastCandidate=row.candidate;
+ updateVettingAvailability();
+ document.querySelector('.vetting-card').scrollIntoView({behavior:'smooth',block:'center'});
 }
 async function scan(){
  try{
-  const outcomes=[];for(let i=1;i<=legCount;i++)outcomes.push({selection:document.getElementById('sel'+i).value,bookmaker:document.getElementById('book'+i).value,odds:Number(document.getElementById('odds'+i).value),commission_pct:Number(document.getElementById('comm'+i).value)});
-  const x=await api('/scan',{method:'POST',body:JSON.stringify({sport:document.getElementById('sport').value,event:document.getElementById('event').value,market:document.getElementById('market').value,outcomes,total_stake:500})});
-  lastOpportunity=x;
-  let html=`<div class="item"><b>${x.qualified?'Potential arbitrage':'Does not qualify'}</b><div>Net theoretical ROI: ${(x.roi*100).toFixed(2)}%</div><div>Estimated theoretical profit: $${x.profit.toFixed(2)}</div>`;
-  x.stakes.forEach((v,i)=>html+=`<div>${outcomes[i].selection} at ${outcomes[i].bookmaker}: <b>$${v.toFixed(2)}</b></div>`);
-  if(x.qualified)html+=`<button style="margin-top:10px" onclick="openSet('${x.opportunity_id}')">I have manually verified and placed both legs — record $500 set</button>`;
-  html+='</div>';document.getElementById('result').innerHTML=html;refresh();
+  const outcomes=[];for(let i=1;i<=legCount;i++)outcomes.push({selection:document.getElementById('sel'+i).value.trim(),bookmaker:document.getElementById('book'+i).value.trim(),odds:Number(document.getElementById('odds'+i).value),commission_pct:Number(document.getElementById('comm'+i).value)});
+  const candidate={sport:document.getElementById('sport').value,event:document.getElementById('event').value.trim(),market:document.getElementById('market').value.trim(),outcomes:outcomes,total_stake:500};
+  const x=await api('/scan',{method:'POST',body:JSON.stringify(candidate)});
+  lastOpportunity=x;lastCandidate=x.candidate||candidate;
+  let html='<div class="item"><b>'+(x.qualified?'Potential arbitrage':'Does not qualify')+'</b><div>Net theoretical ROI: '+(Number(x.roi)*100).toFixed(2)+'%</div><div>Estimated theoretical profit: $'+Number(x.profit).toFixed(2)+'</div>';
+  x.stakes.forEach(function(v,i){html+='<div>'+escapeHtml(outcomes[i].selection)+' at '+escapeHtml(outcomes[i].bookmaker)+': <b>$'+Number(v).toFixed(2)+'</b></div>'});
+  if(x.qualified)html+='<button style="margin-top:10px" onclick="openVetting()">Open assisted vetting</button>';
+  html+='</div>';document.getElementById('result').innerHTML=html;
+  updateVettingAvailability();await refresh();
  }catch(e){document.getElementById('result').textContent=e.message}
 }
-async function openSet(id){
- if(!confirm('Confirm: have you independently verified and successfully placed BOTH legs? This only records exposure; it does not place bets.'))return;
- try{await api('/sets/open',{method:'POST',body:JSON.stringify({opportunity_id:id,manual_confirmation:true,notes:'User confirmed both legs placed manually.'})});refresh()}catch(e){alert(e.message)}
+function updateVettingAvailability(){
+ const ready=!!(lastOpportunity&&lastOpportunity.qualified&&lastCandidate);
+ const button=document.getElementById('openVettingButton');button.disabled=!ready;
+ document.getElementById('vettingDock').classList.toggle('hidden',!ready);
+ document.getElementById('vettingStatus').textContent=ready?'Qualified candidate ready • '+lastCandidate.event:'Run a qualifying scan to open the review checklist.'
 }
-async function settle(id){
- const pnl=prompt('Enter actual net profit/loss in AUD (e.g. 8.50 or -500):');if(pnl===null)return;
- try{await api('/sets/'+id+'/settle',{method:'POST',body:JSON.stringify({actual_pnl:Number(pnl),notes:'Settled manually'})});refresh()}catch(e){alert(e.message)}
+function selectedAccountsFromUI(){
+ return Array.from(lastCandidate.outcomes||[]).map(function(_,i){
+  const id=Number(document.getElementById('accountForLeg'+i).value);
+  return accountsCache.find(function(a){return Number(a.id)===id})
+ })
+}
+function updateVettingContinue(){
+ const checks=Array.from(document.querySelectorAll('.vetting-check')).every(function(c){return c.checked});
+ let valid=false;
+ if(lastCandidate&&lastCandidate.outcomes.length===2){
+  const selected=selectedAccountsFromUI();
+  valid=selected.length===2&&selected.every(Boolean)&&selected[0].id!==selected[1].id&&new Set(selected.map(function(a){return a.owner})).size===2&&selected.every(function(a,i){return Number(a.balance)>=Number(lastOpportunity.stakes[i])})
+ }
+ document.getElementById('beginPlacementButton').disabled=!(checks&&valid)
+}
+async function openVetting(){
+ if(!lastOpportunity||!lastOpportunity.qualified||!lastCandidate)return;
+ const dialog=document.getElementById('vettingDialog');
+ document.getElementById('manualPlacementStage').classList.add('hidden');
+ document.getElementById('vettingReviewStage').classList.remove('hidden');
+ document.getElementById('vettingMessage').classList.add('hidden');
+ document.getElementById('beginPlacementButton').disabled=true;
+ document.querySelectorAll('.vetting-check').forEach(function(c){c.checked=false});
+ document.getElementById('allPlaced').checked=false;
+ document.getElementById('vettingCandidateSummary').innerHTML='<b>'+escapeHtml(lastCandidate.sport)+': '+escapeHtml(lastCandidate.event)+'</b><div>'+escapeHtml(lastCandidate.market)+' • '+(Number(lastOpportunity.roi)*100).toFixed(2)+'% theoretical net ROI • $'+Number(lastOpportunity.profit).toFixed(2)+' estimated theoretical profit</div>';
+ const unsupported=document.getElementById('vettingUnsupported'), accountsEl=document.getElementById('vettingLegAccounts');
+ accountsEl.innerHTML='';unsupported.classList.add('hidden');
+ if(lastCandidate.outcomes.length!==2){
+  unsupported.textContent='Position tracking currently supports two-outcome markets only. The opportunity can be reviewed, but it cannot be recorded as an open position yet.';
+  unsupported.classList.remove('hidden')
+ }
+ try{accountsCache=await api('/accounts')}catch(e){accountsCache=[];unsupported.textContent=e.message;unsupported.classList.remove('hidden')}
+ lastCandidate.outcomes.forEach(function(o,i){
+  const options=accountsCache.filter(function(a){return a.status==='active'});
+  const match=options.find(function(a){return a.bookmaker.toLowerCase()===o.bookmaker.toLowerCase()});
+  const htmlOptions=options.map(function(a){
+   const selectedAccount=match&&Number(match.id)===Number(a.id);
+   const label=escapeHtml(a.owner)+' — '+escapeHtml(a.bookmaker)+' ($'+Number(a.balance).toFixed(2)+')';
+   return '<option value="'+Number(a.id)+'" '+(selectedAccount?'selected':'')+'>'+label+'</option>';
+  }).join('');
+  accountsEl.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+' at '+escapeHtml(o.bookmaker)+'</b><div class="muted">Suggested stake: $'+Number(lastOpportunity.stakes[i]).toFixed(2)+' at '+Number(o.odds).toFixed(2)+' odds</div><label for="accountForLeg'+i+'">Bookmaker account</label><select id="accountForLeg'+i+'">'+htmlOptions+'</select></div>'
+ });
+ document.querySelectorAll('.vetting-check').forEach(function(c){c.onchange=updateVettingContinue});
+ accountsEl.querySelectorAll('select').forEach(function(s){s.onchange=updateVettingContinue});
+ if(dialog.showModal)dialog.showModal();else dialog.setAttribute('open','');
+ updateVettingContinue()
+}
+function closeVetting(){const d=document.getElementById('vettingDialog');if(d.close)d.close();else d.removeAttribute('open')}
+function beginManualPlacement(){
+ updateVettingContinue();if(document.getElementById('beginPlacementButton').disabled)return;
+ selectedLegAccounts=selectedAccountsFromUI();
+ const target=document.getElementById('manualLegChecks');target.innerHTML='';
+ lastCandidate.outcomes.forEach(function(o,i){
+  target.innerHTML+='<div class="item"><b>Leg '+(i+1)+': '+escapeHtml(o.selection)+'</b>'+
+   '<div class="muted">Suggested: '+escapeHtml(o.bookmaker)+' &bull; '+Number(o.odds).toFixed(2)+' odds &bull; stake AUD '+Number(lastOpportunity.stakes[i]).toFixed(2)+'</div>'+
+   '<label for="placedOdds'+i+'">Accepted decimal odds</label>'+
+   '<input id="placedOdds'+i+'" class="placed-odds" type="number" min="1.01" step="0.01" value="'+Number(o.odds).toFixed(2)+'">'+
+   '<label for="placedStake'+i+'">Accepted stake (AUD)</label>'+
+   '<input id="placedStake'+i+'" class="placed-stake" type="number" min="0.01" step="0.01" value="'+Number(lastOpportunity.stakes[i]).toFixed(2)+'">'+
+   '<label class="check-row"><input type="checkbox" class="leg-accepted">This leg was placed manually and the bookmaker accepted it.</label></div>'
+ });
+ document.getElementById('vettingReviewStage').classList.add('hidden');
+ document.getElementById('manualPlacementStage').classList.remove('hidden');
+ document.getElementById('recordPositionButton').disabled=true;
+ document.getElementById('allPlaced').onchange=updateRecordPosition;
+ document.querySelectorAll('.leg-accepted').forEach(function(c){c.onchange=updateRecordPosition});
+ document.querySelectorAll('.placed-odds,.placed-stake').forEach(function(c){c.oninput=updateRecordPosition})
+}
+function updateRecordPosition(){
+ const checks=Array.from(document.querySelectorAll('.leg-accepted'));
+ const acceptedCount=checks.filter(function(c){return c.checked}).length;
+ const acceptedValuesValid=checks.every(function(c,i){
+  if(!c.checked)return true;
+  const odds=Number(document.getElementById('placedOdds'+i).value);
+  const stake=Number(document.getElementById('placedStake'+i).value);
+  return Number.isFinite(odds)&&odds>1&&Number.isFinite(stake)&&stake>0
+ });
+ document.getElementById('recordPositionButton').disabled=!(acceptedCount===2&&acceptedValuesValid&&document.getElementById('allPlaced').checked);
+ document.getElementById('recordUnmatchedButton').disabled=!(acceptedCount===1&&acceptedValuesValid)
+}
+async function recordPosition(){
+ updateRecordPosition();if(document.getElementById('recordPositionButton').disabled)return;
+ const eventId=slug(lastCandidate.event),marketId=slug(lastCandidate.market);
+ const outcomes=lastCandidate.outcomes.map(function(o){return slug(o.selection)});
+ if(new Set(outcomes).size!==2){document.getElementById('vettingMessage').textContent='The two selections need distinct names before they can be recorded.';document.getElementById('vettingMessage').classList.remove('hidden');return}
+ const request={
+  sport:lastCandidate.sport,event:lastCandidate.event,market:lastCandidate.market,
+  event_id:eventId,market_id:marketId,market_type:'binary',
+  possible_outcomes:outcomes,market_rules_verified:true,manual_confirmation:true,
+  notes:'Assisted vetting completed and both legs manually confirmed by '+(currentUser?currentUser.display_name:'signed-in user')+'.',
+  legs:lastCandidate.outcomes.map(function(o,i){
+   return {account_id:Number(selectedLegAccounts[i].id),event_id:eventId,market_id:marketId,outcome_id:outcomes[i],selection:o.selection,odds:Number(document.getElementById('placedOdds'+i).value),stake:Number(document.getElementById('placedStake'+i).value),commission_pct:Number(o.commission_pct||0),manually_accepted:true}
+  })
+ };
+ const button=document.getElementById('recordPositionButton'),message=document.getElementById('vettingMessage');
+ button.disabled=true;message.textContent='Recording the manually placed position…';message.classList.remove('hidden');
+ try{
+  const result=await api('/positions/open',{method:'POST',body:JSON.stringify(request)});
+  message.textContent='Position recorded. '+result.message+(result.warning?' Warning: '+result.warning:'');
+  lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
+  setTimeout(closeVetting,1400)
+ }catch(e){message.textContent=e.message;button.disabled=false}
+}
+async function recordUnmatchedPosition(){
+ updateRecordPosition();
+ if(document.getElementById('recordUnmatchedButton').disabled)return;
+ const accepted=Array.from(document.querySelectorAll('.leg-accepted')).filter(function(c){return c.checked}).length;
+ if(accepted!==1)return;
+ if(!confirm('Record one accepted leg as unmatched? This pauses new positions until the accepted leg is settled.'))return;
+ const eventId=slug(lastCandidate.event),marketId=slug(lastCandidate.market);
+ const outcomes=lastCandidate.outcomes.map(function(o){return slug(o.selection)});
+ if(new Set(outcomes).size!==2){document.getElementById('vettingMessage').textContent='The two selections need distinct names before they can be recorded.';document.getElementById('vettingMessage').classList.remove('hidden');return}
+ const request={
+  sport:lastCandidate.sport,event:lastCandidate.event,market:lastCandidate.market,
+  event_id:eventId,market_id:marketId,market_type:'binary',
+  possible_outcomes:outcomes,market_rules_verified:true,manual_confirmation:true,
+  notes:'One leg accepted; unmatched exposure recorded by '+(currentUser?currentUser.display_name:'signed-in user')+'.',
+  legs:lastCandidate.outcomes.map(function(o,i){
+   const check=document.querySelectorAll('.leg-accepted')[i];
+   return {account_id:Number(selectedLegAccounts[i].id),event_id:eventId,market_id:marketId,outcome_id:outcomes[i],selection:o.selection,odds:check.checked?Number(document.getElementById('placedOdds'+i).value):Number(o.odds),stake:check.checked?Number(document.getElementById('placedStake'+i).value):Number(lastOpportunity.stakes[i]),commission_pct:Number(o.commission_pct||0),manually_accepted:check.checked}
+  })
+ };
+ const button=document.getElementById('recordUnmatchedButton'),message=document.getElementById('vettingMessage');
+ button.disabled=true;message.textContent='Recording unmatched exposure and pausing new positions…';message.classList.remove('hidden');
+ try{
+  const result=await api('/positions/unmatched',{method:'POST',body:JSON.stringify(request)});
+  message.textContent='Unmatched exposure recorded. '+result.message+(result.warning?' Warning: '+result.warning:'');
+  lastOpportunity=null;lastCandidate=null;updateVettingAvailability();await refresh();
+  setTimeout(closeVetting,3000)
+ }catch(e){message.textContent=e.message;button.disabled=false}
+}
+function showHedgeForm(positionId){
+ const position=positionsCache.find(function(x){return Number(x.id)===Number(positionId)});
+ const target=document.getElementById('hedge-form-'+Number(positionId));
+ if(!position||!target)return;
+ let outcomes=[];try{outcomes=JSON.parse(position.possible_outcomes_json||'[]')}catch(e){}
+ const accounts=accountsCache.filter(function(a){return a.status==='active'});
+ const currency=String.fromCharCode(36);
+ target.innerHTML='<p class="muted">Place the hedge yourself first. Choose an outcome and account, then confirm bookmaker acceptance.</p>'+
+  '<label>Hedge outcome</label><select id="hedge-outcome-'+positionId+'">'+outcomes.map(function(o){return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'}).join('')+'</select>'+
+  '<label>Bookmaker account</label><select id="hedge-account-'+positionId+'">'+accounts.map(function(a){return '<option value="'+Number(a.id)+'">'+escapeHtml(a.owner)+' — '+escapeHtml(a.bookmaker)+' (AUD '+Number(a.balance).toFixed(2)+')</option>'}).join('')+'</select>'+
+  '<label>Accepted decimal odds</label><input id="hedge-odds-'+positionId+'" type="number" min="1.01" step="0.01" inputmode="decimal">'+
+  '<label>Accepted stake (AUD)</label><input id="hedge-stake-'+positionId+'" type="number" min="0.01" step="0.01" inputmode="decimal">'+
+  '<button type="button" onclick="recordHedge('+Number(positionId)+')">Confirm accepted hedge</button>';
+ target.classList.remove('hidden')
+}
+async function recordHedge(positionId){
+ const accountId=Number(document.getElementById('hedge-account-'+positionId).value);
+ const outcomeId=document.getElementById('hedge-outcome-'+positionId).value;
+ if(!confirm('Have you personally placed this hedge and verified bookmaker acceptance at these odds and stake?'))return;
+ const payload={
+  account_id:accountId,outcome_id:outcomeId,selection:outcomeId,
+  odds:Number(document.getElementById('hedge-odds-'+positionId).value),
+  stake:Number(document.getElementById('hedge-stake-'+positionId).value),
+  manual_confirmation:true,manually_accepted:true,
+  notes:'Hedge manually placed and acceptance confirmed by '+(currentUser?currentUser.display_name:'signed-in user')
+ };
+ try{
+  const result=await api('/positions/'+Number(positionId)+'/hedge',{method:'POST',body:JSON.stringify(payload)});
+  alert(result.message+' Worst-case return improved from AUD '+Number(result.worst_case_profit_before).toFixed(2)+' to AUD '+Number(result.worst_case_profit_after).toFixed(2)+'.');
+  await refresh()
+ }catch(e){alert(e.message)}
+}
+async function settle(positionId,legId){
+ const actual=prompt('Enter the total return received from the bookmaker in AUD for this leg (include returned stake; enter 0 if lost):');
+ if(actual===null)return;
+ if(!actual.trim()||!Number.isFinite(Number(actual))||Number(actual)<0){alert('Enter a valid return amount, including 0 for a loss.');return}
+ try{
+  await api('/positions/'+positionId+'/legs/'+legId+'/settle',{
+   method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:'Settled manually'})
+  });
+  await refresh()
+ }catch(e){alert(e.message)}
+}
+let cashoutTarget=null;
+function recordCashout(positionId,legId){
+ const position=positionsCache.find(function(p){return Number(p.id)===Number(positionId)});
+ const leg=position&&(position.legs||[]).find(function(l){return Number(l.id)===Number(legId)});
+ if(!leg||!leg.accepted||leg.settled)return;
+ cashoutTarget={positionId:Number(positionId),legId:Number(legId)};
+ document.getElementById('cashoutForm').reset();
+ document.getElementById('cashoutMessage').classList.add('hidden');
+ document.getElementById('cashoutLegDescription').textContent=position.event+' — '+leg.owner+' / '+leg.bookmaker+' / '+leg.selection+' / AUD '+Number(leg.stake).toFixed(2)+' stake';
+ document.getElementById('cashoutDialog').showModal();
+}
+async function submitCashout(event){
+ event.preventDefault();
+ if(!cashoutTarget)return;
+ const target=cashoutTarget;
+ const actual=document.getElementById('cashoutAmount').value;
+ const notes=document.getElementById('cashoutNotes').value.trim();
+ const confirmed=document.getElementById('cashoutConfirmed').checked;
+ const message=document.getElementById('cashoutMessage'),button=document.getElementById('cashoutSubmit');
+ if(!actual.trim()||!Number.isFinite(Number(actual))||Number(actual)<0||!notes||!confirmed){message.textContent='Enter the net credit and a reference, then confirm the completed full cashout.';message.classList.remove('hidden');return}
+ button.disabled=true;
+ try{
+  await api('/positions/'+target.positionId+'/legs/'+target.legId+'/cashout',{
+   method:'POST',body:JSON.stringify({actual_return:Number(actual),notes:notes,manual_confirmation:confirmed})
+  });
+  document.getElementById('cashoutDialog').close();cashoutTarget=null;
+  await refresh()
+ }catch(e){message.textContent=e.message;message.classList.remove('hidden')}
+ finally{button.disabled=false}
 }
 async function enablePush(){
  try{
@@ -98,5 +642,6 @@ async function enablePush(){
   await api('/push/subscribe',{method:'POST',body:JSON.stringify({subscription:sub})});alert('Push notifications enabled.');
  }catch(e){alert(e.message)}
 }
-renderLegs();refresh();setInterval(refresh,15000);
+document.getElementById('cashoutForm').addEventListener('submit',submitCashout);
+initialize();
 </script></body></html>
