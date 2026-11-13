@@ -84,6 +84,45 @@ dialog::backdrop{background:#2B2024B8}
 a{color:var(--deep-teal)}
 @media(prefers-reduced-motion:reduce){button{transition:none}button:hover:not(:disabled){transform:none}}
 
+
+/* Deep-navy production dashboard palette; high-contrast controls on iPhone. */
+:root{
+ --app-bg:#0A1425;--surface:#14243B;--ink:#EDF5FF;--muted-ink:#A9BED5;
+ --navy:#09192E;--indigo:#172D4D;--blue:#43B7E9;--aqua:#61DCE9;--mint:#62E3BF;
+ --lavender:#233B58;--rose:#AD78AC;--magenta:#D4A2F3;--border:#304763;
+ --alert:#FF8B9C;--hot-pink:#FF749A;--coral:#FF8B9C;--sky:#69C9F0;
+ --teal:#61DCE9;--violet:#AF9AF2;--deep-teal:#79D8ED;--gold:#F8D77C;
+ color-scheme:dark;
+}
+body{background:var(--app-bg);color:var(--ink)}
+header{background:linear-gradient(135deg,#09182C,#1B3453 75%,#214B67)}
+header .white{color:#DAE8F8}
+.card{background:var(--surface);border-color:var(--border);box-shadow:0 4px 16px #020A16A6}
+.metric{color:#F2F8FF}
+.muted,.label,small{color:var(--muted-ink)}
+button{background:linear-gradient(120deg,#247AB3,#3AB6DB);color:#FFFFFF;box-shadow:none}
+button.secondary{background:#29496B;color:#F2F8FF}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #8EE6FF;outline-offset:2px}
+input,select,textarea{background:#0F2036;color:#F2F8FF;border:1px solid #49617C}
+input::placeholder,textarea::placeholder{color:#A9BED5}
+label{color:#C2D5E8}
+.item,.check-row{border-color:var(--border)}
+.pill{background:#214E48;color:#B5F8E6}
+.warn{background:#514125;border:1px solid #C9A45C;color:#FFE5AC}
+.auth-gate{background:linear-gradient(145deg,#09182C,#183353)}
+.auth-panel{border-top-color:#66CFEA}
+.vetting-card{background:#172D48;border-color:#3B91BA}
+.vetting-dock{background:#0C213B}
+.vetting-dock button{background:#2B9E8B;color:#FFFFFF}
+dialog{background:#14243B;color:#F2F8FF;border-color:#426182}
+dialog::backdrop{background:#020A16D9}
+#vettingLegAccounts .item,#manualLegChecks .item{background:#1A334E;border-color:#3A5C79}
+.result-message{background:#1B484D;border-color:#3BAFAE;color:#DDFBFC}
+.error,.error-message,.pill.bad{background:#512B3B;color:#FFD4DC;border-color:#FF8B9C}
+.pill.good{background:#214E48;color:#B5F8E6}
+a{color:#87D9FF}
+#status.bad{color:#FFD4A0;font-weight:700}
+
 </style></head>
 <body>
 <header><div class="row"><div><h1>Arbitrage Control</h1><div class="white">Cloud scanner • iPhone dashboard</div></div><span class="pill">MANUAL BETTING</span></div><div id="authControls" class="row hidden"><span>Signed in as <b id="userName"></b></span><button class="secondary" type="button" onclick="logout()">Sign out</button></div></header>
