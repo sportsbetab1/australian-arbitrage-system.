@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from app.database import get_db
 from app.commercial_security import (
-    AccessDenied, authenticate, create_session, resolve_session, revoke_session,
+    AccessDenied, authenticate_limited, create_session, resolve_session, revoke_session,
     require_member, tenant_rows,
 )
 from app.commercial_schema import migrate_commercial_schema, migrate_legacy_tenant_columns
@@ -48,8 +48,10 @@ def customer_login(body: Login, request: Request, response: Response):
     # Same-origin check is applied by the main application's API middleware.
     with conn() as db:
         try:
-            uid = authenticate(db,body.email,body.password)
+            db.execute("BEGIN IMMEDIATE")
+            uid = authenticate_limited(db,body.email,body.password)
         except (AccessDenied,ValueError):
+            db.commit()  # Persist failed-login counter and lockout.
             raise HTTPException(401,"Invalid credentials")
         token = create_session(db,uid)
         db.commit()
@@ -79,12 +81,12 @@ def customer_me(request: Request):
 
 @router.get("/workspaces/{tenant_id}/accounts")
 def customer_accounts(tenant_id: str, request: Request):
-    return tenant_data(request,tenant_id,"accounts")
+    return tenant_data(request,tenant_id,"commercial_customer_accounts")
 
 @router.get("/workspaces/{tenant_id}/positions")
 def customer_positions(tenant_id: str, request: Request):
-    return tenant_data(request,tenant_id,"positions")
+    return tenant_data(request,tenant_id,"commercial_customer_positions")
 
 @router.get("/workspaces/{tenant_id}/bankroll")
 def customer_bankroll(tenant_id: str, request: Request):
-    return tenant_data(request,tenant_id,"bankroll_ledger")
+    return tenant_data(request,tenant_id,"commercial_customer_bankroll_ledger")
