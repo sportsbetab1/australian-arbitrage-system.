@@ -385,8 +385,11 @@ function renderRiskSummary(d){
  const b=d.buffer||{};
  const overdue=Number(b.overdue_items||0);
  const el=document.getElementById('bufferSummary');
- el.textContent='Committed: '+aud(b.committed)+' • Available: '+aud(b.available)+(overdue?' • OVERDUE: '+overdue:'');
+ el.textContent='Limit: '+aud(b.limit)+' • Committed: '+aud(b.committed)+' • Available: '+aud(b.available)+(overdue?' • OVERDUE: '+overdue:'');
  el.classList.toggle('warn',overdue>0);
+ const status=document.getElementById('status');
+ if(b.new_positions_paused){status.textContent='New positions paused — overdue buffer';status.classList.add('bad')}
+ else{status.classList.remove('bad')}
 }
 async function refresh(){
  if(refreshInProgress||!currentUser)return;
@@ -399,7 +402,7 @@ async function refresh(){
   renderRiskSummary(d);
   positionsCache=p;
   renderAccounts(accountRows);renderReports(report);renderNotifications(notificationData);renderBackups(backupData);
-  document.getElementById('status').textContent='API online';
+  if(!d.buffer?.new_positions_paused)document.getElementById('status').textContent='API online';
   document.getElementById('bankroll').textContent=aud(d.starting_bankroll);
   document.getElementById('exposure').textContent=aud(d.open_exposure);
   document.getElementById('active').textContent=String(d.open_positions);
