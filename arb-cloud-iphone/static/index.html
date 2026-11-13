@@ -314,7 +314,7 @@ async function api(path,opts={}){
  let j={};try{j=await r.json()}catch(e){}
  if(!r.ok){
   if(r.status===401&&path!=='/auth/login'){
-   currentUser=null;
+   currentUser=null;authGeneration++;
    if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}
    showAuthGate(false);
   }
@@ -327,7 +327,6 @@ async function api(path,opts={}){
 function showAuthGate(setup){
  const gate=document.getElementById('authGate');gate.classList.remove('hidden');
  document.getElementById('authControls').classList.add('hidden');
- document.getElementById('authLoginPane');
  document.getElementById('loginForm').classList.toggle('hidden',!!setup);
  document.getElementById('setupForm').classList.toggle('hidden',!setup);
  document.getElementById('authTitle').textContent=setup?'Set up Hunta and Jay accounts':'Sign in';
@@ -358,7 +357,7 @@ document.getElementById('setupForm').addEventListener('submit',async function(e)
 });
 async function logout(){
  try{await api('/auth/logout',{method:'POST',body:'{}'})}catch(e){}
- currentUser=null;lastOpportunity=null;lastCandidate=null;if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}showAuthGate(false);updateVettingAvailability();
+ currentUser=null;authGeneration++;lastOpportunity=null;lastCandidate=null;if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}showAuthGate(false);updateVettingAvailability();
 }
 async function initialize(){
  renderLegs();
@@ -371,9 +370,9 @@ async function initialize(){
 }
 async function startDashboard(){
  await refresh();
- if(!refreshTimer)refreshTimer=setInterval(refresh,15000)
+ if(currentUser&&!refreshTimer)refreshTimer=setInterval(refresh,15000)
 }
-let refreshInProgress=false;
+let refreshInProgress=false, authGeneration=0;
 function aud(value){return new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(Number(value)||0)}
 function renderRiskSummary(d){
  const set=(id,value)=>document.getElementById(id).textContent=value;
@@ -392,8 +391,10 @@ function renderRiskSummary(d){
 async function refresh(){
  if(refreshInProgress||!currentUser)return;
  refreshInProgress=true;
+ const generation=authGeneration;
  try{
   const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts'),api('/reports/summary'),api('/notifications'),api('/backups')]);
+  if(!currentUser||generation!==authGeneration)return;
   const d=results[1],p=results[2],o=results[3],accountRows=results[4],report=results[5],notificationData=results[6],backupData=results[7];
   renderRiskSummary(d);
   positionsCache=p;
@@ -414,7 +415,7 @@ async function refresh(){
    return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.status)+' • '+escapeHtml(x.market)+' • $'+Number(x.total_stake).toFixed(2)+' • '+(Number(x.expected_roi)*100).toFixed(2)+'% theoretical</div>'+legs+hedgeAction+'</div>';
   }).join('')||'<small>No open positions.</small>';
   document.getElementById('opps').innerHTML=o.map(function(x){return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • '+(Number(x.roi)*100).toFixed(2)+'% • '+escapeHtml(x.status)+'</div></div>'}).join('')||'<small>No opportunities yet.</small>';
- }catch(e){document.getElementById('status').textContent=!currentUser?'Sign in required':'API unavailable: '+e.message}
+ }catch(e){if(generation===authGeneration)document.getElementById('status').textContent=!currentUser?'Sign in required':'API unavailable: '+e.message}
  finally{refreshInProgress=false}
 }
 async function loadOddsSports(){
