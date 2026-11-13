@@ -41,8 +41,10 @@ class CustomerHTTPIsolationTests(unittest.TestCase):
         headers={"Origin":"http://testserver"}
         with TestClient(app,base_url="http://testserver") as client:
             self.assertEqual(client.post("/api/customer/login",json={"email":"a@example.com","password":"correct-long-password"},headers=headers).status_code,200)
-            headers["X-CSRF-Token"]=client.get("/api/customer/csrf").json()["csrf_token"]
             root="/api/customer/workspaces/"
+            rejected=client.post(root+"tenant-a/positions/drafts",json={"event":"CSRF","sport":"Soccer","market":"H2H","total_stake_cents":100},headers=headers)
+            self.assertEqual(rejected.status_code,403)
+            headers["X-CSRF-Token"]=client.get("/api/customer/csrf").json()["csrf_token"]
             denied=client.post(root+"tenant-b/positions/drafts",
                 json={"event":"Hidden","sport":"Soccer","market":"H2H","total_stake_cents":1000},headers=headers)
             self.assertEqual(denied.status_code,404)
