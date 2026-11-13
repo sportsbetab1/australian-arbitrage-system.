@@ -1421,6 +1421,33 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
                         "update its opening balance or deposits first.",
                     )
 
+        # Prevent accidentally recording the same accepted bookmaker bet
+        # twice. Only accepted, unsettled legs count as live duplicates.
+        for leg in req.legs:
+            if not leg.manually_accepted:
+                continue
+            duplicate = con.execute("""
+                SELECT l.id
+                FROM position_legs AS l
+                JOIN positions AS p ON p.id = l.position_id
+                WHERE l.account_id = ?
+                  AND l.event_id = ?
+                  AND l.market_id = ?
+                  AND l.outcome_id = ?
+                  AND l.accepted = 1
+                  AND l.settled = 0
+                  AND p.status IN ('Open', 'Unmatched')
+                LIMIT 1
+            """, (
+                leg.account_id, leg.event_id, leg.market_id, leg.outcome_id,
+            )).fetchone()
+            if duplicate:
+                raise HTTPException(
+                    409,
+                    "An unsettled accepted bet already exists for this "
+                    "account, event, market and outcome.",
+                )
+
         commission_by_account = {
             row["id"]: 6.0 if row["bookmaker"] == "Betfair" else 0.0
             for row in account_rows
