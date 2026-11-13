@@ -129,3 +129,22 @@ def approve_sensitive_action(con, approver_id, approval_id):
        (approver_id, utcnow().isoformat(), approval_id))
     if con.execute("SELECT changes()").fetchone()[0] != 1:
         raise AccessDenied("Already processed")
+
+def consume_approved_action(con, approval_id, action, payload_digest):
+    """Atomically consume a matching dual-approved action before its side effect.
+
+    Caller must begin BEGIN IMMEDIATE and perform the authorized database change
+    within the same transaction. External transfers need a separate outbox and
+    idempotent provider reconciliation; this helper does not transfer funds.
+    """
+    row = con.execute("""SELECT * FROM commercial_owner_approvals
+        WHERE id=? AND action=? AND payload_digest=? AND status='approved'
+        AND approved_by IS NOT NULL AND approved_by<>requested_by""",
+        (approval_id,action,payload_digest)).fetchone()
+    if not row or datetime.fromisoformat(row["expires_at"]) <= utcnow():
+        raise AccessDenied("Valid two-owner approval required")
+    con.execute("""UPDATE commercial_owner_approvals
+        SET status='executed', executed_at=?
+        WHERE id=? AND status='approved'""",(utcnow().isoformat(),approval_id))
+    if con.execute("SELECT changes()").fetchone()[0] != 1:
+        raise AccessDenied("Approval already consumed")
