@@ -137,3 +137,22 @@ def restrict_account(con, actor, tenant_id, account_id):
         raise ValueError("Active account not found")
     audit(con,tenant_id,actor,"customer.account_restricted","account",account_id)
     return account_id
+
+def financial_report(con, actor, tenant_id):
+    require_member(con,actor,tenant_id)
+    by_type=con.execute("""SELECT entry_type,COUNT(*) AS entries,
+      COALESCE(SUM(amount_cents),0) AS net_cents
+      FROM commercial_customer_bankroll_ledger
+      WHERE tenant_id=? GROUP BY entry_type ORDER BY entry_type""",(tenant_id,)).fetchall()
+    by_bookmaker=con.execute("""SELECT bookmaker,COUNT(*) AS accounts,
+      COALESCE(SUM(opening_balance_cents),0) AS recorded_opening_cents
+      FROM commercial_customer_accounts
+      WHERE tenant_id=? GROUP BY bookmaker ORDER BY bookmaker""",(tenant_id,)).fetchall()
+    settled=con.execute("""SELECT COUNT(*) AS positions,
+      COALESCE(SUM(realised_pnl_cents),0) AS realised_pnl_cents
+      FROM commercial_customer_positions WHERE tenant_id=?
+      AND status='settled'""",(tenant_id,)).fetchone()
+    return {"currency":"AUD","ledger_by_type":[dict(x) for x in by_type],
+      "bookmaker_accounts":[dict(x) for x in by_bookmaker],
+      "settled_positions":dict(settled),
+      "warning":"Unverified manually recorded figures; no bank or bookmaker reconciliation"}
