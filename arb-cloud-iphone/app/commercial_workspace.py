@@ -93,3 +93,44 @@ def draft_detail(con, actor, tenant_id, position_id):
        FROM commercial_customer_position_legs
        WHERE tenant_id=? AND position_id=? ORDER BY id""",(tenant_id,position_id)).fetchall()
     return {"position":dict(row),"legs":[dict(x) for x in legs]}
+
+def validate_draft(con, actor, tenant_id, position_id, minimum_roi_bps=150):
+    """Calculate a two-way arbitrage draft; does not approve or place bets."""
+    require_member(con,actor,tenant_id,("tenant_admin","operator"))
+    position=con.execute("""SELECT * FROM commercial_customer_positions
+      WHERE tenant_id=? AND id=? AND status='draft'""",(tenant_id,position_id)).fetchone()
+    if not position:
+        raise ValueError("Draft not found")
+    legs=con.execute("""SELECT * FROM commercial_customer_position_legs
+      WHERE tenant_id=? AND position_id=? ORDER BY id""",(tenant_id,position_id)).fetchall()
+    if len(legs)!=2 or len({leg["outcome_id"] for leg in legs})!=2:
+        raise ValueError("Exactly two distinct outcomes required")
+    if len({leg["account_id"] for leg in legs})!=2:
+        raise ValueError("Two distinct bookmaker accounts required")
+    total=sum(leg["stake_cents"] for leg in legs)
+    if total!=position["total_stake_cents"]:
+        raise ValueError("Leg stakes must equal draft total")
+    payouts=[leg["stake_cents"]*leg["odds_milli"]//1000 for leg in legs]
+    worst_profit=min(payouts)-total
+    roi_bps=worst_profit*10000//total if total else -10000
+    return {"total_stake_cents":total,"worst_profit_cents":worst_profit,
+            "worst_roi_bps":roi_bps,"meets_minimum":roi_bps>=minimum_roi_bps,
+            "note":"Commission, market rules and live odds are NOT verified; not ready for betting"}
+
+def cancel_draft(con, actor, tenant_id, position_id):
+    require_member(con,actor,tenant_id,("tenant_admin","operator"))
+    row=con.execute("""UPDATE commercial_customer_positions SET status='cancelled'
+      WHERE tenant_id=? AND id=? AND status='draft' RETURNING id""",(tenant_id,position_id)).fetchone()
+    if not row:
+        raise ValueError("Active draft not found")
+    audit(con,tenant_id,actor,"customer.draft_cancelled","position",position_id)
+    return position_id
+
+def restrict_account(con, actor, tenant_id, account_id):
+    require_member(con,actor,tenant_id,("tenant_admin",))
+    row=con.execute("""UPDATE commercial_customer_accounts SET status='restricted'
+      WHERE tenant_id=? AND id=? AND status='active' RETURNING id""",(tenant_id,account_id)).fetchone()
+    if not row:
+        raise ValueError("Active account not found")
+    audit(con,tenant_id,actor,"customer.account_restricted","account",account_id)
+    return account_id
