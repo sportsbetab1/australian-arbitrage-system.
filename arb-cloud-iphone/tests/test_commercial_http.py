@@ -55,6 +55,16 @@ class CustomerHTTPIsolationTests(unittest.TestCase):
                 json={"label":"My account","bookmaker":"Unibet","opening_balance_cents":5000},headers=headers).status_code,201)
             self.assertEqual(client.post(root+"tenant-a/bankroll",
                 json={"entry_type":"deposit","amount_cents":500,"description":"Manual deposit"},headers=headers).status_code,201)
+            account=client.post(root+"tenant-a/accounts",
+                json={"label":"Leg account","bookmaker":"Betfair","opening_balance_cents":0},headers=headers)
+            self.assertEqual(account.status_code,201)
+            position_id=created.json()["id"]
+            leg={"account_id":account.json()["id"],"selection":"Home","outcome_id":"home",
+                 "odds_milli":2100,"stake_cents":500}
+            self.assertEqual(client.post(root+"tenant-a/positions/"+position_id+"/legs",json=leg,headers=headers).status_code,201)
+            self.assertEqual(len(client.get(root+"tenant-a/positions/"+position_id).json()["legs"]),1)
+            self.assertEqual(client.post(root+"tenant-b/positions/"+position_id+"/legs",json=leg,headers=headers).status_code,404)
+            self.assertEqual(client.get(root+"tenant-b/positions/"+position_id).status_code,404)
             self.assertEqual(client.get(root+"tenant-a/summary").status_code,200)
             self.assertGreaterEqual(len(client.get(root+"tenant-a/audit").json()),3)
             self.assertEqual(client.get(root+"tenant-b/audit").status_code,404)
