@@ -15,7 +15,7 @@ from app.commercial_security import (
 )
 from app.commercial_schema import migrate_commercial_schema, migrate_legacy_tenant_columns
 from app.commercial_billing import subscription_summary, fee_summary
-from app.commercial_workspace import create_account, create_draft, record_bankroll_entry, workspace_summary, add_draft_leg, draft_detail
+from app.commercial_workspace import create_account, create_draft, record_bankroll_entry, workspace_summary, add_draft_leg, draft_detail, validate_draft, cancel_draft, restrict_account
 from app.commercial_csrf import csrf_token, check_csrf
 
 router = APIRouter(prefix="/api/customer", tags=["customer"])
@@ -206,3 +206,22 @@ def customer_position_detail(tenant_id: str, position_id: str, request: Request)
             return draft_detail(db,uid,tenant_id,position_id)
         except AccessDenied:
             raise HTTPException(404,"Position not found")
+
+@router.get("/workspaces/{tenant_id}/positions/{position_id}/validate")
+def customer_validate_draft(tenant_id: str, position_id: str, request: Request):
+    uid=current_user(request)
+    with conn() as db:
+        try:
+            return validate_draft(db,uid,tenant_id,position_id)
+        except AccessDenied:
+            raise HTTPException(404,"Workspace not found")
+        except ValueError as exc:
+            raise HTTPException(422,str(exc))
+
+@router.post("/workspaces/{tenant_id}/positions/{position_id}/cancel")
+def customer_cancel_draft(tenant_id: str, position_id: str, request: Request):
+    return mutate(request,tenant_id,cancel_draft,position_id)
+
+@router.post("/workspaces/{tenant_id}/accounts/{account_id}/restrict")
+def customer_restrict_account(tenant_id: str, account_id: str, request: Request):
+    return mutate(request,tenant_id,restrict_account,account_id)
