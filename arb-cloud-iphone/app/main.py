@@ -1445,6 +1445,16 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
             commission_by_account,
         )
 
+        # Fully accepted positions must satisfy the hard net-profit floor.
+        # A single already-accepted leg may still be recorded as Unmatched,
+        # even at a loss, so exposure can be monitored and safely hedged.
+        if not allow_unmatched and result["roi"] < MIN_NET_ROI:
+            raise HTTPException(
+                409,
+                f"Worst-case net ROI {result['roi']:.2%} is below the "
+                f"required {MIN_NET_ROI:.2%}. No position was recorded.",
+            )
+
         check_new_position_allowed(con, result["total_stake"])
 
         position_id = con.execute("""
