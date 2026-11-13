@@ -4,7 +4,7 @@ from app.commercial_schema import migrate_commercial_schema, migrate_legacy_tena
 from app.commercial_security import (
     AccessDenied, create_user, authenticate, create_session, resolve_session,
     revoke_session, require_member, tenant_rows, request_sensitive_action,
-    approve_sensitive_action, consume_approved_action,
+    approve_sensitive_action, consume_approved_action, authenticate_limited,
 )
 
 class TenantSecurityTests(unittest.TestCase):
@@ -55,6 +55,17 @@ class TenantSecurityTests(unittest.TestCase):
     def test_unverified_login_denied(self):
         with self.assertRaises(AccessDenied):
             authenticate(self.db,"b@example.com","long-password-for-b")
+
+    def test_five_failed_logins_lock_account(self):
+        self.db.execute("UPDATE commercial_users SET email_verified_at=CURRENT_TIMESTAMP WHERE id=?", (self.a,))
+        for _ in range(5):
+            with self.assertRaises(AccessDenied):
+                authenticate_limited(self.db,"a@example.com","wrong-password")
+        row=self.db.execute("SELECT failed_attempts,locked_until FROM commercial_login_attempts WHERE email_normalized='a@example.com'").fetchone()
+        self.assertEqual(row["failed_attempts"],5)
+        self.assertIsNotNone(row["locked_until"])
+        with self.assertRaises(AccessDenied):
+            authenticate_limited(self.db,"a@example.com","long-password-for-a")
 
     def test_dual_owner_approval(self):
         approval = request_sensitive_action(self.db,self.h,"change_profit_fee","sha256:example")
