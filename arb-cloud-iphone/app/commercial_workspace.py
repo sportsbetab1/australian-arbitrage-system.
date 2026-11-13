@@ -73,6 +73,9 @@ def add_draft_leg(con, actor, tenant_id, position_id, account_id, selection, out
         WHERE id=? AND tenant_id=?""",(position_id,tenant_id)).fetchone()
     if not position or position["status"]!="draft":
         raise ValueError("Draft position not found")
+    account=con.execute("SELECT status FROM commercial_customer_accounts WHERE tenant_id=? AND id=?", (tenant_id,account_id)).fetchone()
+    if not account or account["status"]!="active":
+        raise ValueError("Active account not found in workspace")
     if not selection.strip() or not outcome_id.strip() or odds_milli<=1000 or stake_cents<=0:
         raise ValueError("Invalid leg")
     lid=new_id()
