@@ -198,6 +198,21 @@ class CustomerAPIIsolationTests(unittest.TestCase):
                 ).fetchone()[0], 1
             )
 
+    def test_summary_is_scoped_and_never_claims_verified_bankroll(self):
+        self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
+        response = self.client.get("/api/customer/summary")
+        self.assertEqual(response.status_code, 200)
+        summary = response.json()
+        self.assertEqual(summary["account_count"], 1)
+        self.assertEqual(summary["position_count"], 1)
+        self.assertFalse(summary["verified_bankroll"])
+        self.assertFalse(summary["new_positions_allowed"])
+        self.assertEqual(summary["book_balance_cents"], 100)
+        self.assertEqual(self.login("tenant-b", "b@example.invalid", "secure-pass-b").status_code, 200)
+        other = self.client.get("/api/customer/summary").json()
+        self.assertEqual(other["book_balance_cents"], 200)
+        self.assertFalse(other["new_positions_allowed"])
+
     def test_account_detail_balance_and_cross_tenant_404(self):
         self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
         self.assertEqual(
