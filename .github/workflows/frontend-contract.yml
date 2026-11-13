@@ -12,7 +12,7 @@ on:
     paths:
       - 'arb-cloud-iphone/static/**'
       - 'arb-cloud-iphone/app/**'
-      - 'arb-cloud-iphone/tests/test_frontend_contract.py'
+      - 'arb-cloud-iphone/tests/**'
       - '.github/workflows/frontend-contract.yml'
 
 permissions:
