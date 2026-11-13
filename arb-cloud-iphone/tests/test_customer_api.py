@@ -56,6 +56,8 @@ class CustomerAPIIsolationTests(unittest.TestCase):
                 [("ledger-a", "tenant-a", 100, "deposit"),
                  ("ledger-b", "tenant-b", 200, "deposit")],
             )
+        with connect() as con:
+            con.execute("UPDATE customer_users SET role='owner' WHERE id='user-a'")
         self.env_patch = patch.dict(os.environ, {"AUTH_COOKIE_SECURE": "false"})
         self.env_patch.start()
         self.patch = patch("app.customer_api.get_db", self.connect)
@@ -132,6 +134,42 @@ class CustomerAPIIsolationTests(unittest.TestCase):
         self.assertEqual(self.login("tenant-b", "b@example.invalid", "secure-pass-b").status_code, 200)
         self.assertEqual([r["id"] for r in self.client.get("/api/customer/accounts").json()], ["account-b"])
         self.assertEqual(self.client.get("/api/customer/positions/position-a").status_code, 404)
+
+    def test_owner_creates_only_own_tenant_account(self):
+        self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
+        created = self.client.post(
+            "/api/customer/accounts",
+            json={"bookmaker": "Unibet", "label": "Secondary", "opening_balance_cents": 2500},
+            headers=self.origin,
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        account_id = created.json()["id"]
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT tenant_id FROM customer_bookmaker_accounts WHERE id=?", (account_id,)
+            ).fetchone()
+            self.assertEqual(row["tenant_id"], "tenant-a")
+            audit = con.execute(
+                "SELECT tenant_id, action FROM customer_audit_log WHERE action='customer_account_created'"
+            ).fetchone()
+            self.assertEqual(audit["tenant_id"], "tenant-a")
+        self.assertEqual(
+            self.client.post(
+                "/api/customer/accounts",
+                json={"bookmaker": "Unibet", "label": "Secondary"},
+                headers=self.origin,
+            ).status_code, 409
+        )
+
+    def test_member_cannot_create_account(self):
+        self.assertEqual(self.login("tenant-b", "b@example.invalid", "secure-pass-b").status_code, 200)
+        self.assertEqual(
+            self.client.post(
+                "/api/customer/accounts",
+                json={"bookmaker": "Betfair", "label": "New"},
+                headers=self.origin,
+            ).status_code, 403
+        )
 
     def test_customer_session_does_not_grant_operator_access(self):
         self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
