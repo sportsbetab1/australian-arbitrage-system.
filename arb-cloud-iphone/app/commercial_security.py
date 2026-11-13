@@ -14,6 +14,7 @@ from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHas
 
 HASHER = PasswordHasher()
 SESSION_HOURS = 12
+DUMMY_HASH = HASHER.hash("invalid-login-dummy-password")
 SENSITIVE_ACTIONS = frozenset({"change_subscription_price", "change_profit_fee", "transfer_company_funds", "grant_platform_owner", "remove_platform_owner"})
 
 class AccessDenied(Exception):
@@ -45,8 +46,8 @@ def create_user(con, email, password):
 def authenticate(con, email, password):
     row = con.execute("SELECT * FROM commercial_users WHERE email_normalized=? AND disabled_at IS NULL",
                       (normalize_email(email),)).fetchone()
-    # Always do a password hash verification, even for an unknown email.
-    stored = row["password_hash"] if row else HASHER.hash("invalid-login-dummy-password")
+    # Fixed dummy hash avoids per-request expensive Argon2 hash generation.
+    stored = row["password_hash"] if row else DUMMY_HASH
     try:
         valid = HASHER.verify(stored, password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
@@ -88,7 +89,7 @@ def require_member(con, user_id, tenant_id, roles=("tenant_admin","operator","vi
 
 def tenant_rows(con, user_id, tenant_id, table):
     # Strict allowlist: table names cannot be supplied freely.
-    allowed = {"accounts", "positions", "bankroll_ledger"}
+    allowed = {"accounts", "positions", "bankroll_ledger", "commercial_customer_accounts", "commercial_customer_positions", "commercial_customer_bankroll_ledger"}
     if table not in allowed:
         raise ValueError("Unknown resource")
     require_member(con, user_id, tenant_id)
@@ -148,3 +149,26 @@ def consume_approved_action(con, approval_id, action, payload_digest):
         WHERE id=? AND status='approved'""",(utcnow().isoformat(),approval_id))
     if con.execute("SELECT changes()").fetchone()[0] != 1:
         raise AccessDenied("Approval already consumed")
+
+def authenticate_limited(con, email, password):
+    """Lock the normalized email after five failed attempts for 15 minutes.
+
+    Call inside a transaction. API caller uses BEGIN IMMEDIATE so concurrent
+    attempts cannot race the counter. Avoid disclosing account existence.
+    """
+    key = normalize_email(email)
+    row = con.execute("SELECT failed_attempts,locked_until FROM commercial_login_attempts WHERE email_normalized=?", (key,)).fetchone()
+    if row and row["locked_until"] and datetime.fromisoformat(row["locked_until"]) > utcnow():
+        raise AccessDenied("Invalid credentials")
+    try:
+        uid = authenticate(con, key, password)
+    except AccessDenied:
+        failures = (row["failed_attempts"] if row and not row["locked_until"] else 0) + 1
+        lock = (utcnow()+timedelta(minutes=15)).isoformat() if failures >= 5 else None
+        con.execute("""INSERT INTO commercial_login_attempts(email_normalized,failed_attempts,locked_until)
+          VALUES (?,?,?) ON CONFLICT(email_normalized) DO UPDATE SET
+          failed_attempts=excluded.failed_attempts,locked_until=excluded.locked_until,
+          updated_at=CURRENT_TIMESTAMP""", (key, failures, lock))
+        raise
+    con.execute("DELETE FROM commercial_login_attempts WHERE email_normalized=?", (key,))
+    return uid
