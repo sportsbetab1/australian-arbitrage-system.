@@ -225,6 +225,27 @@ class CustomerAPIIsolationTests(unittest.TestCase):
         self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
         self.assertEqual(self.client.get("/api/accounts").status_code, 401)
 
+    def test_suspended_tenant_revokes_existing_session(self):
+        self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
+        self.assertEqual(self.client.get("/api/customer/me").status_code, 200)
+        with self.connect() as con:
+            con.execute("UPDATE customer_tenants SET status='suspended' WHERE id='tenant-a'")
+        self.assertEqual(self.client.get("/api/customer/me").status_code, 401)
+        self.assertEqual(
+            self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 401
+        )
+
+    def test_deactivated_user_revokes_existing_session(self):
+        self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
+        with self.connect() as con:
+            con.execute("UPDATE customer_users SET active=0 WHERE id='user-a'")
+        self.assertEqual(self.client.get("/api/customer/accounts").status_code, 401)
+
+    def test_customer_cannot_use_operator_cookie(self):
+        # A customer token cannot authenticate the legacy operator dashboard.
+        self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
+        self.assertEqual(self.client.get("/api/dashboard").status_code, 401)
+
     def test_logout_revokes_customer_session(self):
         self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
         self.assertEqual(self.client.post("/api/customer/logout", headers=self.origin).status_code, 200)
