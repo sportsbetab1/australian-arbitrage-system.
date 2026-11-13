@@ -11,6 +11,7 @@ from pathlib import Path
 _TEST_DIR = tempfile.TemporaryDirectory()
 os.environ["DB_PATH"] = str(Path(_TEST_DIR.name) / "customer-test.sqlite3")
 os.environ["AUTH_COOKIE_SECURE"] = "false"
+os.environ["COMMERCIAL_CSRF_SECRET"] = "test-only-secret-123456789012345678901234567890"
 
 from fastapi.testclient import TestClient
 from app.main import app, initialise_system
@@ -40,6 +41,7 @@ class CustomerHTTPIsolationTests(unittest.TestCase):
         headers={"Origin":"http://testserver"}
         with TestClient(app,base_url="http://testserver") as client:
             self.assertEqual(client.post("/api/customer/login",json={"email":"a@example.com","password":"correct-long-password"},headers=headers).status_code,200)
+            headers["X-CSRF-Token"]=client.get("/api/customer/csrf").json()["csrf_token"]
             root="/api/customer/workspaces/"
             denied=client.post(root+"tenant-b/positions/drafts",
                 json={"event":"Hidden","sport":"Soccer","market":"H2H","total_stake_cents":1000},headers=headers)
@@ -73,6 +75,7 @@ class CustomerHTTPIsolationTests(unittest.TestCase):
             self.assertEqual(client.get("/api/customer/workspaces/tenant-a/subscription").json(),[])
             self.assertEqual(client.get("/api/customer/workspaces/tenant-a/fees").json(),[])
             self.assertEqual(client.get("/api/positions").status_code,401)
+            headers["X-CSRF-Token"]=client.get("/api/customer/csrf").json()["csrf_token"]
             logout=client.post("/api/customer/logout",headers=headers)
             self.assertEqual(logout.status_code,200)
             self.assertEqual(client.get("/api/customer/workspaces/tenant-a/positions").status_code,401)
