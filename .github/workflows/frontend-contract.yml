@@ -35,6 +35,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_frontend_contract.py' -v
       - name: Check financial risk policies
         run: python -m unittest discover -s tests -p 'test_risk_policy.py' -v
+      - name: Check authentication and HTTP security boundaries
+        run: python -m unittest discover -s tests -p 'test_auth_boundary.py' -v
       - name: Check inline JavaScript syntax
         run: |
           python - <<'PY'
