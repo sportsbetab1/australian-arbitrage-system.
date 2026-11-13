@@ -15,7 +15,7 @@ from app.commercial_security import (
 )
 from app.commercial_schema import migrate_commercial_schema, migrate_legacy_tenant_columns
 from app.commercial_billing import subscription_summary, fee_summary
-from app.commercial_workspace import create_account, create_draft, record_bankroll_entry, workspace_summary
+from app.commercial_workspace import create_account, create_draft, record_bankroll_entry, workspace_summary, add_draft_leg, draft_detail
 from app.commercial_csrf import csrf_token, check_csrf
 
 router = APIRouter(prefix="/api/customer", tags=["customer"])
@@ -184,3 +184,25 @@ def customer_audit(tenant_id: str, request: Request):
             raise HTTPException(404,"Workspace not found")
         return [dict(row) for row in db.execute("""SELECT id,actor_user_id,action,target_type,target_id,created_at
           FROM commercial_audit_events WHERE tenant_id=? ORDER BY created_at DESC,id DESC LIMIT 200""",(tenant_id,))]
+
+class DraftLegCreate(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    account_id: str = Field(min_length=1,max_length=100)
+    selection: str = Field(min_length=1,max_length=200)
+    outcome_id: str = Field(min_length=1,max_length=200)
+    odds_milli: int = Field(gt=1000,le=10000000)
+    stake_cents: int = Field(gt=0,le=100000000000)
+
+@router.post("/workspaces/{tenant_id}/positions/{position_id}/legs",status_code=201)
+def customer_add_draft_leg(tenant_id: str, position_id: str, body: DraftLegCreate, request: Request):
+    return mutate(request,tenant_id,add_draft_leg,position_id,body.account_id,
+                  body.selection,body.outcome_id,body.odds_milli,body.stake_cents)
+
+@router.get("/workspaces/{tenant_id}/positions/{position_id}")
+def customer_position_detail(tenant_id: str, position_id: str, request: Request):
+    uid=current_user(request)
+    with conn() as db:
+        try:
+            return draft_detail(db,uid,tenant_id,position_id)
+        except AccessDenied:
+            raise HTTPException(404,"Position not found")
