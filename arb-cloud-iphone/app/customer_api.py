@@ -203,6 +203,8 @@ def customer_create_account(payload: CustomerAccountCreate, request: Request):
     identity = _customer(request)
     if identity["role"] != "owner":
         raise HTTPException(403, "Customer owner permission required.")
+    if not payload.bookmaker.strip() or not payload.label.strip():
+        raise HTTPException(422, "Bookmaker and label cannot be blank.")
     account_id = str(uuid.uuid4())
     with get_db() as con:
         try:
