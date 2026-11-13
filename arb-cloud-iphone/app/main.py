@@ -1119,6 +1119,9 @@ def dashboard():
             FROM positions
             WHERE status IN ('Open', 'Unmatched')
         """).fetchone()["total"]
+        unmatched_count = con.execute("""
+            SELECT COUNT(*) AS total FROM positions WHERE status = 'Unmatched'
+        """).fetchone()["total"]
 
         settled = con.execute("""
             SELECT
@@ -1158,6 +1161,12 @@ def dashboard():
             float(allocations["withdrawals"]), 2
         ),
         "buffer": buffer,
+        "unmatched_positions": unmatched_count,
+        "new_positions_paused": bool(buffer["new_positions_paused"] or unmatched_count),
+        "risk_lock_reasons": (
+            (["Overdue settlement-buffer commitment"] if buffer["new_positions_paused"] else [])
+            + (["Unmatched position requires resolution"] if unmatched_count else [])
+        ),
     }
 
 
