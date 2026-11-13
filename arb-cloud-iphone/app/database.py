@@ -227,6 +227,8 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id)"
     )
 
+    from app.customer_schema import migrate_customer_platform
+    migrate_customer_platform(conn)
     conn.commit()
     conn.close()
 
