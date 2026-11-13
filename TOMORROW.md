@@ -12,8 +12,8 @@ The feed follow-up bounds provider responses and handles malformed nested data,
 sport records, labels, quota headers and extreme timestamps safely. All feed
 verification uses mocked provider responses; live coverage remains unverified.
 
-Local verification: 120 tests passed before the final timestamp regression;
-the additional timestamp check passes in the focused feed suite. The real localhost smoke command
+Local verification: all 123 tests passed, including malformed feed records,
+extreme timestamps and calculated-return overflow. The real localhost smoke command
 passed startup, authentication, rounded qualification, a fictional position and
 settlement, reports, snapshot creation and logout. Compilation and dashboard
 JavaScript syntax checks passed. See the deployment-readiness pull request for

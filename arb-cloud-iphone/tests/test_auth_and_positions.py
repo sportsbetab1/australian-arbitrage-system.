@@ -1280,3 +1280,15 @@ def test_account_journal_is_append_only(client):
             with pytest.raises(sqlite3.IntegrityError, match="append-only"):
                 con.execute(statement)
             assert con.execute("SELECT amount FROM account_transactions").fetchone()[0] == 10
+
+
+def test_overflowing_feed_calculation_is_skipped(client, monkeypatch):
+    assert login(client).status_code == 200
+    monkeypatch.setattr(main, "fetch_json", lambda *args, **kwargs: ([], {}))
+    monkeypatch.setattr(main, "build_h2h_candidates", lambda *args: [{
+        "sport": "Tennis", "event": "Extreme A v B", "market": "h2h", "event_id": "extreme",
+        "outcomes": [{"selection": s, "bookmaker": s, "odds": 1e308} for s in ("A", "B")],
+    }])
+    response = client.get("/api/odds/scan/tennis_atp")
+    assert response.status_code == 200
+    assert response.json()["qualified_count"] == 0

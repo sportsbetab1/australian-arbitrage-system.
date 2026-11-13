@@ -181,6 +181,8 @@ candidates. The sport selector exposes validated keys/titles and boolean active
 flags; invalid quota numbers are omitted. Oversized or invalid JSON returns a
 sanitized provider error without exposing the API key. A valid response can
 still contain no usable candidates; verify provider coverage on the real host.
+Finite odds that overflow calculated returns are also rejected: manual scans
+return a validation error and feed scans skip the unusable candidate.
 
 Feed quotes must contain the event's home and away teams (plus Draw for soccer),
 with no duplicate or unexpected selection labels. Nonfinite prices are ignored;

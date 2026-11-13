@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 import csv
 import io
+import math
 import re
 import smtplib
 import ssl
@@ -661,6 +662,9 @@ def calculate(candidate: Candidate):
         for i in range(len(stakes))
     )
 
+    if not all(math.isfinite(value) for value in (roi, payout, payout - candidate.total_stake)):
+        raise HTTPException(422, "Odds and stake exceed the supported numerical range.")
+
     return {
         "sum_inverse": inverse_sum,
         "roi": roi,
@@ -1272,7 +1276,12 @@ def scan_live_odds(sport_key: str):
             "total_stake": 500.0,
         }
         candidate = Candidate(**candidate_data)
-        result = calculate(candidate)
+        try:
+            result = calculate(candidate)
+        except HTTPException as error:
+            if error.status_code == 422:
+                continue
+            raise
         if result["net_roi"] < MIN_NET_ROI or min(result["stakes"]) <= 0:
             continue
 

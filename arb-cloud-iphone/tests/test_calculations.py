@@ -106,3 +106,12 @@ def test_candidate_rejects_blank_or_duplicate_labels(changes):
     data.update(changes)
     with pytest.raises(ValidationError):
         Candidate(**data)
+
+
+def test_finite_inputs_cannot_overflow_calculated_returns():
+    from fastapi import HTTPException
+    candidate = Candidate(sport="Test", event="Extreme prices", market="Winner", total_stake=500,
+                          outcomes=[Outcome(selection=s, bookmaker=s, odds=1e308) for s in ("A", "B")])
+    with pytest.raises(HTTPException) as error:
+        calculate(candidate)
+    assert error.value.status_code == 422
