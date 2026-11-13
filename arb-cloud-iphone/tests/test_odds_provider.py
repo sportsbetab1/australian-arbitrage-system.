@@ -185,7 +185,7 @@ def test_sports_list_filters_invalid_records():
     assert normalise_sports([None, {}, {**valid, "key": "../bad"}, {**valid, "active": "yes"}, valid]) == [valid]
 
 
-@pytest.mark.parametrize("body", [b"x" * (2 * 1024 * 1024 + 1), b"[" * 2000])
+@pytest.mark.parametrize("body", [b"x" * (2 * 1024 * 1024 + 1), b"[" * 2000], ids=["oversized", "deeply-nested"])
 def test_provider_response_limits_and_nested_json_are_sanitized(body):
     from io import BytesIO
     class Response(BytesIO):
