@@ -251,6 +251,20 @@ def customer_create_account(payload: CustomerAccountCreate, request: Request):
             "opening_balance_cents": payload.opening_balance_cents}
 
 
+@router.get("/audit")
+def customer_audit(request: Request):
+    identity = _customer(request)
+    if identity["role"] != "owner":
+        raise HTTPException(403, "Customer owner permission required.")
+    with get_db() as con:
+        rows = con.execute("""
+            SELECT id, actor_user_id, action, details_json, created_at
+            FROM customer_audit_log WHERE tenant_id=?
+            ORDER BY created_at DESC, id DESC LIMIT 200
+        """, (identity["tenant_id"],)).fetchall()
+    return [dict(row) for row in rows]
+
+
 class CustomerBankrollEntryCreate(BaseModel):
     account_id: str = Field(min_length=1, max_length=128)
     entry_type: str = Field(pattern="^(deposit|withdrawal|adjustment)$")
