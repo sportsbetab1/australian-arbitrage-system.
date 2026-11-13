@@ -7,7 +7,7 @@ import os
 import secrets
 import sqlite3
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from app.database import get_db
 from app.commercial_security import (
     AccessDenied, authenticate_limited, create_session, resolve_session, revoke_session,
@@ -15,6 +15,7 @@ from app.commercial_security import (
 )
 from app.commercial_schema import migrate_commercial_schema, migrate_legacy_tenant_columns
 from app.commercial_billing import subscription_summary, fee_summary
+from app.commercial_workspace import create_account, create_draft, record_bankroll_entry, workspace_summary
 
 router = APIRouter(prefix="/api/customer", tags=["customer"])
 COOKIE = "arb_customer_session"
@@ -109,3 +110,69 @@ def customer_fees(tenant_id: str, request: Request):
             return fee_summary(db,uid,tenant_id)
         except AccessDenied:
             raise HTTPException(404,"Workspace not found")
+
+class AccountCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: str = Field(min_length=1,max_length=100)
+    bookmaker: str = Field(min_length=1,max_length=100)
+    opening_balance_cents: int = Field(default=0,ge=0,le=100000000000)
+
+class DraftCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event: str = Field(min_length=1,max_length=300)
+    sport: str = Field(min_length=1,max_length=100)
+    market: str = Field(min_length=1,max_length=200)
+    total_stake_cents: int = Field(ge=0,le=100000000000)
+
+class LedgerCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entry_type: str
+    amount_cents: int = Field(ge=-100000000000,le=100000000000)
+    description: str = Field(min_length=4,max_length=500)
+
+def mutate(request,tenant_id,fn,*args):
+    uid=current_user(request)
+    with conn() as db:
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            result=fn(db,uid,tenant_id,*args)
+            db.commit()
+            return {"id":result}
+        except AccessDenied:
+            raise HTTPException(404,"Workspace not found")
+        except ValueError as exc:
+            raise HTTPException(422,str(exc))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409,"Conflicting record")
+
+@router.post("/workspaces/{tenant_id}/accounts",status_code=201)
+def customer_create_account(tenant_id: str, body: AccountCreate, request: Request):
+    return mutate(request,tenant_id,create_account,body.label,body.bookmaker,body.opening_balance_cents)
+
+@router.post("/workspaces/{tenant_id}/positions/drafts",status_code=201)
+def customer_create_draft(tenant_id: str, body: DraftCreate, request: Request):
+    return mutate(request,tenant_id,create_draft,body.event,body.sport,body.market,body.total_stake_cents)
+
+@router.post("/workspaces/{tenant_id}/bankroll",status_code=201)
+def customer_record_bankroll(tenant_id: str, body: LedgerCreate, request: Request):
+    return mutate(request,tenant_id,record_bankroll_entry,body.entry_type,body.amount_cents,body.description)
+
+@router.get("/workspaces/{tenant_id}/summary")
+def customer_workspace_summary(tenant_id: str, request: Request):
+    uid=current_user(request)
+    with conn() as db:
+        try:
+            return workspace_summary(db,uid,tenant_id)
+        except AccessDenied:
+            raise HTTPException(404,"Workspace not found")
+
+@router.get("/workspaces/{tenant_id}/audit")
+def customer_audit(tenant_id: str, request: Request):
+    uid=current_user(request)
+    with conn() as db:
+        try:
+            require_member(db,uid,tenant_id,("tenant_admin","viewer","operator"))
+        except AccessDenied:
+            raise HTTPException(404,"Workspace not found")
+        return [dict(row) for row in db.execute("""SELECT id,actor_user_id,action,target_type,target_id,created_at
+          FROM commercial_audit_events WHERE tenant_id=? ORDER BY created_at DESC,id DESC LIMIT 200""",(tenant_id,))]
