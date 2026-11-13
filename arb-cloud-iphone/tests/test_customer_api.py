@@ -198,6 +198,39 @@ class CustomerAPIIsolationTests(unittest.TestCase):
                 ).fetchone()[0], 1
             )
 
+    def test_account_detail_balance_and_cross_tenant_404(self):
+        self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
+        self.assertEqual(
+            self.client.get("/api/customer/accounts/account-b").status_code, 404
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/customer/bankroll",
+                json={"account_id": "account-a", "entry_type": "deposit", "amount_cents": 3500},
+                headers=self.origin,
+            ).status_code, 201
+        )
+        account = self.client.get("/api/customer/accounts/account-a")
+        self.assertEqual(account.status_code, 200)
+        self.assertEqual(account.json()["ledger_net_cents"], 3500)
+        self.assertEqual(account.json()["balance_cents"], 3500)
+
+    def test_audit_history_only_exposes_own_tenant(self):
+        self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
+        self.assertEqual(
+            self.client.post(
+                "/api/customer/bankroll",
+                json={"account_id": "account-a", "entry_type": "deposit", "amount_cents": 100},
+                headers=self.origin,
+            ).status_code, 201
+        )
+        audit = self.client.get("/api/customer/audit")
+        self.assertEqual(audit.status_code, 200)
+        self.assertEqual(len(audit.json()), 1)
+        self.assertEqual(audit.json()[0]["action"], "customer_bankroll_entry_created")
+        self.assertEqual(self.login("tenant-b", "b@example.invalid", "secure-pass-b").status_code, 200)
+        self.assertEqual(self.client.get("/api/customer/audit").status_code, 403)
+
     def test_member_cannot_write_bankroll(self):
         self.assertEqual(self.login("tenant-b", "b@example.invalid", "secure-pass-b").status_code, 200)
         self.assertEqual(
