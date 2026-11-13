@@ -16,6 +16,7 @@ from app.commercial_security import (
 from app.commercial_schema import migrate_commercial_schema, migrate_legacy_tenant_columns
 from app.commercial_billing import subscription_summary, fee_summary
 from app.commercial_workspace import create_account, create_draft, record_bankroll_entry, workspace_summary
+from app.commercial_csrf import csrf_token, check_csrf
 
 router = APIRouter(prefix="/api/customer", tags=["customer"])
 COOKIE = "arb_customer_session"
@@ -62,8 +63,14 @@ def customer_login(body: Login, request: Request, response: Response):
                         samesite="strict",path="/api/customer")
     return {"authenticated":True}
 
+@router.get("/csrf")
+def customer_csrf(request: Request):
+    current_user(request)
+    return {"csrf_token":csrf_token(request.cookies.get(COOKIE))}
+
 @router.post("/logout")
 def customer_logout(request: Request, response: Response):
+    check_csrf(request,COOKIE)
     token = request.cookies.get(COOKIE)
     if token:
         with conn() as db:
@@ -131,6 +138,7 @@ class LedgerCreate(BaseModel):
     description: str = Field(min_length=4,max_length=500)
 
 def mutate(request,tenant_id,fn,*args):
+    check_csrf(request,COOKIE)
     uid=current_user(request)
     with conn() as db:
         try:
