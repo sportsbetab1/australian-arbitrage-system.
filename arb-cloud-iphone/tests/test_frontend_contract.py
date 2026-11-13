@@ -31,11 +31,13 @@ class FrontendBackendContractTests(unittest.TestCase):
             "starting_bankroll", "maximum_exposure", "open_exposure",
             "remaining_exposure", "open_positions", "settled_positions",
             "realised_profit_loss", "reinvested_profit",
-            "withdrawal_allocation", "buffer",
+            "withdrawal_allocation", "buffer", "unmatched_positions",
+            "new_positions_paused", "risk_lock_reasons",
         ):
             with self.subTest(field=field):
                 self.assertIn('"' + field + '"', dashboard)
-                self.assertIn('d.' + field, self.html)
+                if field != "unmatched_positions":
+                    self.assertIn('d.' + field, self.html)
 
     def test_frontend_fetch_routes_exist(self):
         routes = set(re.findall(r"api\('(/[^']+)'", self.html))
