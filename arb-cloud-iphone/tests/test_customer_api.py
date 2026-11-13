@@ -171,6 +171,56 @@ class CustomerAPIIsolationTests(unittest.TestCase):
             ).status_code, 403
         )
 
+    def test_owner_bankroll_entry_is_tenant_scoped(self):
+        self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
+        response = self.client.post(
+            "/api/customer/bankroll",
+            json={"account_id": "account-a", "entry_type": "deposit", "amount_cents": 7500},
+            headers=self.origin,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(
+            self.client.post(
+                "/api/customer/bankroll",
+                json={"account_id": "account-b", "entry_type": "deposit", "amount_cents": 100},
+                headers=self.origin,
+            ).status_code, 404
+        )
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT tenant_id, amount_cents FROM customer_bankroll_entries WHERE id=?",
+                (response.json()["id"],),
+            ).fetchone()
+            self.assertEqual((row["tenant_id"], row["amount_cents"]), ("tenant-a", 7500))
+            self.assertEqual(
+                con.execute(
+                    "SELECT COUNT(*) FROM customer_audit_log WHERE action='customer_bankroll_entry_created'"
+                ).fetchone()[0], 1
+            )
+
+    def test_member_cannot_write_bankroll(self):
+        self.assertEqual(self.login("tenant-b", "b@example.invalid", "secure-pass-b").status_code, 200)
+        self.assertEqual(
+            self.client.post(
+                "/api/customer/bankroll",
+                json={"account_id": "account-b", "entry_type": "deposit", "amount_cents": 100},
+                headers=self.origin,
+            ).status_code, 403
+        )
+
+    def test_bankroll_amount_sign_is_enforced(self):
+        self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
+        for entry_type, amount in (("deposit", -100), ("withdrawal", 100), ("deposit", 0)):
+            with self.subTest(entry_type=entry_type, amount=amount):
+                self.assertEqual(
+                    self.client.post(
+                        "/api/customer/bankroll",
+                        json={"account_id": "account-a", "entry_type": entry_type,
+                              "amount_cents": amount},
+                        headers=self.origin,
+                    ).status_code, 422
+                )
+
     def test_customer_session_does_not_grant_operator_access(self):
         self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
         self.assertEqual(self.client.get("/api/accounts").status_code, 401)
