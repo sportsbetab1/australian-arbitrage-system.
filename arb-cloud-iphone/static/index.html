@@ -449,15 +449,7 @@ async function refresh(){
   renderRiskSummary(d);
   positionsCache=p;
   renderAccounts(accountRows);
-  const optional=await Promise.allSettled([
-   api('/reports/summary'),api('/notifications'),api('/backups')
-  ]);
-  if(!currentUser||generation!==authGeneration)return;
-  if(optional[0].status==='fulfilled')renderReports(optional[0].value);
-  if(optional[1].status==='fulfilled')renderNotifications(optional[1].value);
-  if(optional[2].status==='fulfilled')renderBackups(optional[2].value);
-  const degraded=optional.some(result=>result.status==='rejected');
-  if(!d.new_positions_paused)document.getElementById('status').textContent=degraded?'API online — some secondary services unavailable':'API online';
+  if(!d.new_positions_paused)document.getElementById('status').textContent='API online';
   document.getElementById('bankroll').textContent=aud(d.starting_bankroll);
   document.getElementById('exposure').textContent=aud(d.open_exposure);
   document.getElementById('active').textContent=String(d.open_positions);
@@ -473,6 +465,16 @@ async function refresh(){
    return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.status)+' • '+escapeHtml(x.market)+' • $'+Number(x.total_stake).toFixed(2)+' • '+(Number(x.expected_roi)*100).toFixed(2)+'% theoretical</div>'+legs+hedgeAction+'</div>';
   }).join('')||'<small>No open positions.</small>';
   document.getElementById('opps').innerHTML=o.map(function(x){return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • '+(Number(x.roi)*100).toFixed(2)+'% • '+escapeHtml(x.status)+'</div></div>'}).join('')||'<small>No opportunities yet.</small>';
+  // Update core financial figures immediately, before optional services settle.
+  const optional=await Promise.allSettled([
+   api('/reports/summary'),api('/notifications'),api('/backups')
+  ]);
+  if(!currentUser||generation!==authGeneration)return;
+  if(optional[0].status==='fulfilled')renderReports(optional[0].value);
+  if(optional[1].status==='fulfilled')renderNotifications(optional[1].value);
+  if(optional[2].status==='fulfilled')renderBackups(optional[2].value);
+  if(!d.new_positions_paused&&optional.some(result=>result.status==='rejected'))
+   document.getElementById('status').textContent='API online — some secondary services unavailable';
  }catch(e){if(generation===authGeneration)document.getElementById('status').textContent=!currentUser?'Sign in required':'API unavailable: '+e.message}
  finally{refreshInProgress=false}
 }
