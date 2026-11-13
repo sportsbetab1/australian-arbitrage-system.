@@ -79,6 +79,44 @@ CREATE TABLE IF NOT EXISTS commercial_audit_events (
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_commercial_audit_tenant ON commercial_audit_events(tenant_id,created_at);
+CREATE TABLE IF NOT EXISTS commercial_login_attempts (
+ email_normalized TEXT PRIMARY KEY,
+ failed_attempts INTEGER NOT NULL DEFAULT 0,
+ locked_until TEXT,
+ updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS commercial_customer_accounts (
+ id TEXT PRIMARY KEY,
+ tenant_id TEXT NOT NULL REFERENCES commercial_tenants(id),
+ label TEXT NOT NULL,
+ bookmaker TEXT NOT NULL,
+ opening_balance_cents INTEGER NOT NULL DEFAULT 0 CHECK(opening_balance_cents>=0),
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','restricted','closed')),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE(tenant_id,label,bookmaker)
+);
+CREATE INDEX IF NOT EXISTS idx_customer_accounts_tenant ON commercial_customer_accounts(tenant_id);
+CREATE TABLE IF NOT EXISTS commercial_customer_positions (
+ id TEXT PRIMARY KEY,
+ tenant_id TEXT NOT NULL REFERENCES commercial_tenants(id),
+ event TEXT NOT NULL,
+ sport TEXT NOT NULL,
+ market TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','partially_placed','open','settled','cancelled')),
+ total_stake_cents INTEGER NOT NULL DEFAULT 0 CHECK(total_stake_cents>=0),
+ realised_pnl_cents INTEGER,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_customer_positions_tenant ON commercial_customer_positions(tenant_id);
+CREATE TABLE IF NOT EXISTS commercial_customer_bankroll_ledger (
+ id TEXT PRIMARY KEY,
+ tenant_id TEXT NOT NULL REFERENCES commercial_tenants(id),
+ entry_type TEXT NOT NULL CHECK(entry_type IN ('opening','deposit','withdrawal','settlement','adjustment')),
+ amount_cents INTEGER NOT NULL,
+ description TEXT,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_customer_bankroll_tenant ON commercial_customer_bankroll_ledger(tenant_id);
 CREATE TABLE IF NOT EXISTS commercial_owner_approvals (
  id TEXT PRIMARY KEY,
  action TEXT NOT NULL,
