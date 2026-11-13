@@ -1,0 +1,96 @@
+"""End-to-end customer HTTP isolation tests against the mounted FastAPI app.
+
+Run from arb-cloud-iphone with isolated DB_PATH. Never run on production DB.
+"""
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+# DB_PATH is read during imports; set before importing app.
+_TEST_DIR = tempfile.TemporaryDirectory()
+os.environ["DB_PATH"] = str(Path(_TEST_DIR.name) / "customer-test.sqlite3")
+os.environ["AUTH_COOKIE_SECURE"] = "false"
+os.environ["COMMERCIAL_CSRF_SECRET"] = "test-only-secret-123456789012345678901234567890"
+
+from fastapi.testclient import TestClient
+from app.main import app, initialise_system
+from app.database import get_db
+from app.commercial_security import create_user
+
+class CustomerHTTPIsolationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        initialise_system()
+        cls.client = TestClient(app, base_url="http://testserver")
+        with get_db() as con:
+            for tenant in ("tenant-a","tenant-b"):
+                con.execute("INSERT INTO commercial_tenants(id,display_name,kind,status) VALUES (?,?,'customer','active')",(tenant,tenant))
+            for tenant, email in (("tenant-a","a@example.com"),("tenant-b","b@example.com")):
+                uid=create_user(con,email,"correct-long-password")
+                con.execute("UPDATE commercial_users SET email_verified_at=CURRENT_TIMESTAMP WHERE id=?",(uid,))
+                con.execute("INSERT INTO commercial_memberships(tenant_id,user_id,role) VALUES (?,?,'tenant_admin')",(tenant,uid))
+                con.execute("INSERT INTO commercial_customer_accounts(id,tenant_id,label,bookmaker) VALUES (?,?,?,?)",
+                            (tenant+"-account",tenant,tenant,"Sportsbet"))
+                con.execute("INSERT INTO commercial_customer_positions(id,tenant_id,event,sport,market) VALUES (?,?,?,?,?)",
+                            (tenant+"-position",tenant,tenant,"Soccer","H2H"))
+                con.execute("INSERT INTO commercial_customer_bankroll_ledger(id,tenant_id,entry_type,amount_cents) VALUES (?,?,'deposit',1000)",
+                            (tenant+"-ledger",tenant))
+
+    def test_customer_write_isolation_and_audit(self):
+        headers={"Origin":"http://testserver"}
+        with TestClient(app,base_url="http://testserver") as client:
+            self.assertEqual(client.post("/api/customer/login",json={"email":"a@example.com","password":"correct-long-password"},headers=headers).status_code,200)
+            root="/api/customer/workspaces/"
+            rejected=client.post(root+"tenant-a/positions/drafts",json={"event":"CSRF","sport":"Soccer","market":"H2H","total_stake_cents":100},headers=headers)
+            self.assertEqual(rejected.status_code,403)
+            headers["X-CSRF-Token"]=client.get("/api/customer/csrf").json()["csrf_token"]
+            denied=client.post(root+"tenant-b/positions/drafts",
+                json={"event":"Hidden","sport":"Soccer","market":"H2H","total_stake_cents":1000},headers=headers)
+            self.assertEqual(denied.status_code,404)
+            created=client.post(root+"tenant-a/positions/drafts",
+                json={"event":"Local","sport":"Soccer","market":"H2H","total_stake_cents":1000},headers=headers)
+            self.assertEqual(created.status_code,201,created.text)
+            self.assertEqual(client.post(root+"tenant-a/accounts",
+                json={"label":"My account","bookmaker":"Unibet","opening_balance_cents":5000},headers=headers).status_code,201)
+            self.assertEqual(client.post(root+"tenant-a/bankroll",
+                json={"entry_type":"deposit","amount_cents":500,"description":"Manual deposit"},headers=headers).status_code,201)
+            account=client.post(root+"tenant-a/accounts",
+                json={"label":"Leg account","bookmaker":"Betfair","opening_balance_cents":0},headers=headers)
+            self.assertEqual(account.status_code,201)
+            position_id=created.json()["id"]
+            leg={"account_id":account.json()["id"],"selection":"Home","outcome_id":"home",
+                 "odds_milli":2100,"stake_cents":500}
+            self.assertEqual(client.post(root+"tenant-a/positions/"+position_id+"/legs",json=leg,headers=headers).status_code,201)
+            self.assertEqual(len(client.get(root+"tenant-a/positions/"+position_id).json()["legs"]),1)
+            self.assertEqual(client.post(root+"tenant-b/positions/"+position_id+"/legs",json=leg,headers=headers).status_code,404)
+            self.assertEqual(client.get(root+"tenant-b/positions/"+position_id).status_code,404)
+            self.assertEqual(client.get(root+"tenant-a/summary").status_code,200)
+            self.assertGreaterEqual(len(client.get(root+"tenant-a/audit").json()),3)
+            self.assertEqual(client.get(root+"tenant-b/audit").status_code,404)
+            self.assertEqual(client.get(root+"tenant-b/summary").status_code,404)
+
+    def test_login_and_cross_tenant_http_denial(self):
+        headers={"Origin":"http://testserver"}
+        with TestClient(app,base_url="http://testserver") as client:
+            login=client.post("/api/customer/login",json={"email":"a@example.com","password":"correct-long-password"},headers=headers)
+            self.assertEqual(login.status_code,200,login.text)
+            own = client.get("/api/customer/workspaces/tenant-a/positions")
+            self.assertEqual(own.status_code,200)
+            self.assertGreaterEqual(len(own.json()),1)
+            self.assertTrue(all(item["tenant_id"]=="tenant-a" for item in own.json()))
+            self.assertEqual(client.get("/api/customer/workspaces/tenant-b/positions").status_code,404)
+            self.assertEqual(client.get("/api/customer/workspaces/tenant-b/bankroll").status_code,404)
+            self.assertEqual(client.get("/api/customer/workspaces/tenant-b/accounts").status_code,404)
+            self.assertEqual(client.get("/api/customer/workspaces/tenant-b/subscription").status_code,404)
+            self.assertEqual(client.get("/api/customer/workspaces/tenant-b/fees").status_code,404)
+            self.assertEqual(client.get("/api/customer/workspaces/tenant-a/subscription").json(),[])
+            self.assertEqual(client.get("/api/customer/workspaces/tenant-a/fees").json(),[])
+            self.assertEqual(client.get("/api/positions").status_code,401)
+            headers["X-CSRF-Token"]=client.get("/api/customer/csrf").json()["csrf_token"]
+            logout=client.post("/api/customer/logout",headers=headers)
+            self.assertEqual(logout.status_code,200)
+            self.assertEqual(client.get("/api/customer/workspaces/tenant-a/positions").status_code,401)
+
+if __name__ == "__main__":
+    unittest.main()

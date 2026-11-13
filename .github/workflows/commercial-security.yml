@@ -1,0 +1,22 @@
+name: Commercial security tests
+on:
+  push:
+    branches: [feature/commercial-identity-foundation]
+  pull_request:
+    paths:
+      - 'arb-cloud-iphone/app/commercial_*.py'
+      - 'arb-cloud-iphone/tests/test_commercial_*.py'
+      - '.github/workflows/commercial-security.yml'
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: arb-cloud-iphone
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -p 'test_commercial_*.py' -v
