@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 import csv
 import io
+import math
 import re
 import smtplib
 import ssl
@@ -30,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
 from scripts.backup_db import create_backup
-from app.odds import OddsProviderError, build_h2h_candidates, fetch_json
+from app.odds import OddsProviderError, build_h2h_candidates, fetch_json, normalise_sports
 from app import rate_limits
 
 # ============================================================
@@ -661,6 +662,9 @@ def calculate(candidate: Candidate):
         for i in range(len(stakes))
     )
 
+    if not all(math.isfinite(value) for value in (roi, payout, payout - candidate.total_stake)):
+        raise HTTPException(422, "Odds and stake exceed the supported numerical range.")
+
     return {
         "sum_inverse": inverse_sum,
         "roi": roi,
@@ -1243,7 +1247,7 @@ def odds_sports():
         raise HTTPException(error.status_code, str(error)) from None
     if not isinstance(data, list):
         raise HTTPException(502, "The odds provider returned an invalid sports list.")
-    return {"sports": data, "quota": usage}
+    return {"sports": normalise_sports(data), "quota": usage}
 
 
 @app.get("/api/odds/scan/{sport_key}")
@@ -1272,7 +1276,12 @@ def scan_live_odds(sport_key: str):
             "total_stake": 500.0,
         }
         candidate = Candidate(**candidate_data)
-        result = calculate(candidate)
+        try:
+            result = calculate(candidate)
+        except HTTPException as error:
+            if error.status_code == 422:
+                continue
+            raise
         if result["net_roi"] < MIN_NET_ROI or min(result["stakes"]) <= 0:
             continue
 

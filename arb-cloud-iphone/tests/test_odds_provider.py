@@ -87,7 +87,7 @@ def test_fetch_json_keeps_api_key_in_request_and_reads_quota_headers():
         def __exit__(self, *args):
             return False
 
-        def read(self):
+        def read(self, size=-1):
             return b'[{"sport_key":"soccer_epl"}]'
 
     seen = {}
@@ -152,3 +152,59 @@ def test_binary_market_requires_both_event_teams():
     event["away_team"] = "Other"
     assert build_h2h_candidates([event], now=now) == []
 
+
+
+@pytest.mark.parametrize("field,value", [("bookmakers", None), ("bookmakers", {}),
+                                        ("home_team", {}), ("sport_title", "x" * 101)])
+def test_malformed_events_do_not_crash_or_supply_candidates(field, value):
+    now = datetime.now(timezone.utc)
+    event = event_fixture(now.isoformat())
+    event[field] = value
+    assert build_h2h_candidates([None, "bad", event], now=now) == []
+
+
+def test_malformed_nested_records_do_not_hide_valid_events():
+    now = datetime.now(timezone.utc)
+    event = event_fixture(now.isoformat())
+    event["bookmakers"].extend([None, {"title": "Invalid", "markets": None}])
+    event["bookmakers"][0]["markets"].append(None)
+    assert len(build_h2h_candidates([None, event], now=now)) == 1
+
+
+def test_malformed_outcome_record_invalidates_that_market():
+    now = datetime.now(timezone.utc)
+    event = event_fixture(now.isoformat())
+    for book in event["bookmakers"]:
+        book["markets"][0]["outcomes"].append(None)
+    assert build_h2h_candidates([event], now=now) == []
+
+
+def test_sports_list_filters_invalid_records():
+    from app.odds import normalise_sports
+    valid = {"key": "tennis_atp", "title": "Tennis", "active": True}
+    assert normalise_sports([None, {}, {**valid, "key": "../bad"}, {**valid, "active": "yes"}, valid]) == [valid]
+
+
+@pytest.mark.parametrize("body", [b"x" * (2 * 1024 * 1024 + 1), b"[" * 2000], ids=["oversized", "deeply-nested"])
+def test_provider_response_limits_and_nested_json_are_sanitized(body):
+    from io import BytesIO
+    class Response(BytesIO):
+        headers = {}
+    with pytest.raises(OddsProviderError) as error:
+        fetch_json("secret-sentinel", "sports", opener=lambda *args, **kwargs: Response(body))
+    assert error.value.status_code == 502
+    assert "secret-sentinel" not in str(error.value)
+
+
+def test_nonfinite_quota_headers_are_ignored():
+    from io import BytesIO
+    class Response(BytesIO):
+        headers = {"x-requests-used": "NaN", "x-requests-remaining": "Infinity", "x-requests-last": "-1"}
+    assert fetch_json("test-key", "sports", opener=lambda *args, **kwargs: Response(b"[]"))[1] == {}
+
+
+def test_overflowing_timestamp_is_ignored():
+    now = datetime.now(timezone.utc)
+    event = event_fixture(now.isoformat())
+    event["commence_time"] = "0001-01-01T00:00:00+23:00"
+    assert build_h2h_candidates([event], now=now) == []

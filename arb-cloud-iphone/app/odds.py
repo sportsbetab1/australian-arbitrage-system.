@@ -4,6 +4,29 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import json
 import math
+import re
+
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+
+
+def _records(value):
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _text(value):
+    return value.strip() if isinstance(value, str) else ""
+
+
+def normalise_sports(payload):
+    sports = []
+    for item in _records(payload):
+        key, title = _text(item.get("key")), _text(item.get("title"))
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", key) or not title or len(title) > 100:
+            continue
+        if not isinstance(item.get("active"), bool):
+            continue
+        sports.append({"key": key, "title": title, "active": item["active"]})
+    return sports
 
 
 class OddsProviderError(Exception):
@@ -22,7 +45,10 @@ def fetch_json(api_key, path, params=None, base_url="https://api.the-odds-api.co
     open_request = opener or urlopen
     try:
         with open_request(request, timeout=12) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            body = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise OddsProviderError("The odds provider response exceeded the size limit.", 502)
+            payload = json.loads(body.decode("utf-8"))
             headers = response.headers
     except HTTPError as error:
         if error.code == 401:
@@ -32,7 +58,7 @@ def fetch_json(api_key, path, params=None, base_url="https://api.the-odds-api.co
         raise OddsProviderError(f"The odds provider returned HTTP {error.code}.", 502) from None
     except (URLError, TimeoutError, OSError):
         raise OddsProviderError("The odds provider could not be reached.", 503) from None
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
         raise OddsProviderError("The odds provider returned invalid JSON.", 502) from None
 
     usage = {}
@@ -44,7 +70,9 @@ def fetch_json(api_key, path, params=None, base_url="https://api.the-odds-api.co
         value = headers.get(header)
         if value is not None:
             try:
-                usage[key] = float(value)
+                number = float(value)
+                if math.isfinite(number) and number >= 0:
+                    usage[key] = number
             except (TypeError, ValueError):
                 pass
     return payload, usage
@@ -55,35 +83,47 @@ def _market_updated_at(value):
         return None
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (ValueError, OverflowError):
         return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
 
 
 def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6.0):
     now = now or datetime.now(timezone.utc)
     candidates = []
-    for event in events:
-        home = str(event.get("home_team") or "").strip()
-        away = str(event.get("away_team") or "").strip()
-        if not home or not away or home == away:
+    for event in _records(events):
+        home = _text(event.get("home_team"))
+        away = _text(event.get("away_team"))
+        event_name = home + " vs " + away
+        sport = _text(event.get("sport_title")) or _text(event.get("sport_key"))
+        if (not home or not away or home.casefold() == away.casefold()
+                or max(len(home), len(away)) > 200 or len(event_name) > 300
+                or not sport or len(sport) > 100):
             continue
         expected_outcomes = {home, away}
         if str(event.get("sport_key", "")).startswith("soccer_"):
             expected_outcomes.add("Draw")
+        if len({label.casefold() for label in expected_outcomes}) != len(expected_outcomes):
+            continue
         if len(expected_outcomes) != (3 if str(event.get("sport_key", "")).startswith("soccer_") else 2):
             continue
         commence = _market_updated_at(event.get("commence_time"))
         if commence is None or commence <= now:
             continue
         best = {}
-        for bookmaker in event.get("bookmakers", []):
-            for market in bookmaker.get("markets", []):
+        for bookmaker in _records(event.get("bookmakers")):
+            title = _text(bookmaker.get("title")) or _text(bookmaker.get("key"))
+            if not title or len(title) > 200:
+                continue
+            for market in _records(bookmaker.get("markets")):
                 if market.get("key") != "h2h":
                     continue
-                labels = [str(item.get("name", "")).strip() for item in market.get("outcomes", [])]
+                quotes = _records(market.get("outcomes"))
+                if not isinstance(market.get("outcomes"), list) or len(quotes) != len(market["outcomes"]):
+                    continue
+                labels = [_text(item.get("name")) for item in quotes]
                 # Use only complete, unambiguous quotes for this event's teams.
                 if len(labels) != len(expected_outcomes) or set(labels) != expected_outcomes:
                     continue
@@ -94,11 +134,10 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
                 if age > max_age_seconds or age < -60:
                     continue
 
-                title = bookmaker.get("title") or bookmaker.get("key") or "Unknown bookmaker"
                 key = str(bookmaker.get("key", "")).lower()
                 commission = commission_pct if "betfair" in key or "betfair" in title.lower() else 0.0
-                for outcome in market.get("outcomes", []):
-                    name = str(outcome.get("name", "")).strip()
+                for outcome in quotes:
+                    name = _text(outcome.get("name"))
                     try:
                         price = float(outcome.get("price"))
                     except (TypeError, ValueError):
@@ -122,8 +161,8 @@ def build_h2h_candidates(events, now=None, max_age_seconds=180, commission_pct=6
         if set(best) != expected_outcomes:
             continue
         candidates.append({
-            "sport": event.get("sport_title") or event.get("sport_key") or "Unknown sport",
-            "event": (str(event.get("home_team", "")) + " vs " + str(event.get("away_team", ""))).strip(),
+            "sport": sport,
+            "event": event_name,
             "event_id": str(event.get("id", "")),
             "market": "h2h",
             "commence_time": event.get("commence_time"),
