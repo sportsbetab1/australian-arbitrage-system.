@@ -1,0 +1,44 @@
+name: Frontend API contract checks
+
+on:
+  push:
+    branches: [backend-upgrade]
+    paths:
+      - 'arb-cloud-iphone/static/**'
+      - 'arb-cloud-iphone/app/**'
+      - 'arb-cloud-iphone/tests/test_frontend_contract.py'
+      - '.github/workflows/frontend-contract.yml'
+  pull_request:
+    paths:
+      - 'arb-cloud-iphone/static/**'
+      - 'arb-cloud-iphone/app/**'
+      - 'arb-cloud-iphone/tests/test_frontend_contract.py'
+      - '.github/workflows/frontend-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: arb-cloud-iphone
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check frontend/backend contracts
+        run: python -m unittest discover -s tests -p 'test_frontend_contract.py' -v
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path("static/index.html").read_text()
+          scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script>", html, re.S | re.I)
+          assert scripts, "No inline script found"
+          Path("/tmp/arb-inline-script.js").write_text("\n".join(scripts))
+          PY
+          node --check /tmp/arb-inline-script.js
