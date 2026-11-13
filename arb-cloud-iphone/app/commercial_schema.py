@@ -79,9 +79,38 @@ CREATE TABLE IF NOT EXISTS commercial_audit_events (
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_commercial_audit_tenant ON commercial_audit_events(tenant_id,created_at);
+CREATE TABLE IF NOT EXISTS commercial_owner_approvals (
+ id TEXT PRIMARY KEY,
+ action TEXT NOT NULL,
+ payload_digest TEXT NOT NULL,
+ requested_by TEXT NOT NULL REFERENCES commercial_users(id),
+ approved_by TEXT REFERENCES commercial_users(id),
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','executed','cancelled')),
+ expires_at TEXT NOT NULL,
+ approved_at TEXT,
+ executed_at TEXT,
+ CHECK(approved_by IS NULL OR approved_by <> requested_by)
+);
 """
+
+TENANT_TABLES = ("accounts", "positions", "bankroll_ledger")
+
+def migrate_legacy_tenant_columns(conn: sqlite3.Connection) -> None:
+    """Add nullable tenant columns without assigning ownership of old records.
+
+    Existing records must be explicitly mapped to a verified internal tenant
+    before any legacy route can be made multi-tenant.
+    """
+    for table in TENANT_TABLES:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not existing:
+            raise RuntimeError(f"Missing legacy table: {table}")
+        if "tenant_id" not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN tenant_id TEXT REFERENCES commercial_tenants(id)")
+        conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_tenant ON {table}(tenant_id)")
 
 def migrate_commercial_schema(conn: sqlite3.Connection) -> None:
     """Idempotent additive migration. Caller controls transaction and backup."""
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    # Legacy columns deliberately require an explicit second migration step.
