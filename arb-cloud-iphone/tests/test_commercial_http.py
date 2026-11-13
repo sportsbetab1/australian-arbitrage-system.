@@ -63,6 +63,13 @@ class CustomerHTTPIsolationTests(unittest.TestCase):
                  "odds_milli":2100,"stake_cents":500}
             self.assertEqual(client.post(root+"tenant-a/positions/"+position_id+"/legs",json=leg,headers=headers).status_code,201)
             self.assertEqual(len(client.get(root+"tenant-a/positions/"+position_id).json()["legs"]),1)
+            self.assertEqual(client.get(root+"tenant-a/positions/"+position_id+"/validate").status_code,422)
+            self.assertEqual(client.post(root+"tenant-a/accounts/"+account.json()["id"]+"/restrict",headers=headers).status_code,200)
+            self.assertEqual(client.post(root+"tenant-a/positions/"+position_id+"/legs",
+                json={"account_id":account.json()["id"],"selection":"Away","outcome_id":"away",
+                      "odds_milli":2200,"stake_cents":500},headers=headers).status_code,422)
+            self.assertEqual(client.post(root+"tenant-a/positions/"+position_id+"/cancel",headers=headers).status_code,200)
+            self.assertEqual(client.post(root+"tenant-a/positions/"+position_id+"/cancel",headers=headers).status_code,422)
             self.assertEqual(client.post(root+"tenant-b/positions/"+position_id+"/legs",json=leg,headers=headers).status_code,404)
             self.assertEqual(client.get(root+"tenant-b/positions/"+position_id).status_code,404)
             self.assertEqual(client.get(root+"tenant-a/summary").status_code,200)
