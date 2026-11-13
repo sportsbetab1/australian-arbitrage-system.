@@ -660,6 +660,16 @@ def calculate(candidate: Candidate):
     }
 
 
+def require_qualified_open_roi(roi, *, allow_unmatched=False):
+    """Enforce the worst-case net ROI floor without hiding a live unmatched bet."""
+    if not allow_unmatched and roi < MIN_NET_ROI:
+        raise HTTPException(
+            409,
+            f"Worst-case net ROI {roi:.2%} is below the "
+            f"required {MIN_NET_ROI:.2%}. No position was recorded.",
+        )
+
+
 def calculate_position_roi(legs, possible_outcomes, commission_by_account):
     total_stake = sum(leg.stake for leg in legs)
 
@@ -1448,12 +1458,7 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
         # Fully accepted positions must satisfy the hard net-profit floor.
         # A single already-accepted leg may still be recorded as Unmatched,
         # even at a loss, so exposure can be monitored and safely hedged.
-        if not allow_unmatched and result["roi"] < MIN_NET_ROI:
-            raise HTTPException(
-                409,
-                f"Worst-case net ROI {result['roi']:.2%} is below the "
-                f"required {MIN_NET_ROI:.2%}. No position was recorded.",
-            )
+        require_qualified_open_roi(result["roi"], allow_unmatched=allow_unmatched)
 
         check_new_position_allowed(con, result["total_stake"])
 
