@@ -47,6 +47,22 @@ class FrontendBackendContractTests(unittest.TestCase):
             with self.subTest(route=route):
                 self.assertIn("/api" + route, backend_routes)
 
+    def test_secondary_services_cannot_block_core_dashboard(self):
+        self.assertIn("Promise.allSettled", self.html)
+        self.assertIn("api('/dashboard')", self.html)
+        self.assertIn("api('/reports/summary')", self.html)
+        self.assertIn("some secondary services unavailable", self.html)
+
+    def test_dark_theme_has_accessible_focus_indicators(self):
+        self.assertIn("--app-bg:#0A1425", self.html)
+        self.assertIn("color-scheme:dark", self.html)
+        self.assertIn("outline:3px solid #8EE6FF", self.html)
+
+    def test_buffer_pause_is_visible(self):
+        self.assertIn("new_positions_paused", self.html)
+        self.assertIn("New positions paused", self.html)
+        self.assertIn("b.overdue_items", self.html)
+
     def test_session_expiry_stops_polling(self):
         self.assertIn("if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}", self.html)
         self.assertIn("if(refreshInProgress||!currentUser)return", self.html)
