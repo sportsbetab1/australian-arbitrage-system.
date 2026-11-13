@@ -42,7 +42,7 @@ class FrontendBackendContractTests(unittest.TestCase):
         routes.update(re.findall(r'api\("(/[^"]+)"', self.html))
         backend_routes = set(re.findall(r'@app\.(?:get|post|put|patch|delete)\("(/api/[^"]+)"\)', self.backend))
         for route in routes:
-            if "+" in route or "${" in route:
+            if route.endswith("/") or "+" in route or "${" in route:
                 continue  # Parameterized paths require runtime tests.
             with self.subTest(route=route):
                 self.assertIn("/api" + route, backend_routes)
