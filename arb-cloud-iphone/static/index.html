@@ -106,10 +106,10 @@ a{color:var(--deep-teal)}
  </div>
 </div>
 <div class="grid">
- <div class="card"><div class="label">Starting bankroll</div><div class="metric" id="bankroll">$10,000</div></div>
- <div class="card"><div class="label">Open exposure</div><div class="metric" id="exposure">$0</div></div>
- <div class="card"><div class="label">Open positions</div><div class="metric" id="active">0</div></div>
- <div class="card"><div class="label">Available capacity</div><div class="metric" id="capacity">$2,500</div></div>
+ <div class="card"><div class="label">Starting bankroll</div><div class="metric" id="bankroll">—</div></div>
+ <div class="card"><div class="label">Open exposure</div><div class="metric" id="exposure">—</div></div>
+ <div class="card"><div class="label">Open positions</div><div class="metric" id="active">—</div></div>
+ <div class="card"><div class="label">Available capacity</div><div class="metric" id="capacity">—</div></div>
 </div>
 <div class="grid" aria-label="Risk and profit summary">
  <div class="card"><div class="label">Maximum exposure</div><div class="metric" id="maximumExposure">—</div></div>
@@ -122,7 +122,7 @@ a{color:var(--deep-teal)}
 <div class="card"><b>Settlement buffer</b><div id="bufferSummary" class="muted" role="status">Loading…</div></div>
 <div class="card">
  <div class="row"><b>Scanner status</b><span class="pill" id="status">Connecting</span></div>
- <p class="muted">Minimum net theoretical ROI: 1.5% • $500 combined stake per set. The live odds feed is on-demand and provides candidates only. Verify prices, rules, limits, and account availability manually; all bets remain manual.</p>
+ <p class="muted">Minimum net theoretical ROI: 1.5%. Stakes and exposure are subject to server-side risk limits. The live odds feed is on-demand and provides candidates only. Verify prices, rules, limits, and account availability manually; all bets remain manual.</p>
  <button class="secondary" onclick="enablePush()">Enable iPhone push notifications</button>
 </div>
 <div class="card vetting-card">
@@ -400,10 +400,10 @@ async function refresh(){
   positionsCache=p;
   renderAccounts(accountRows);renderReports(report);renderNotifications(notificationData);renderBackups(backupData);
   document.getElementById('status').textContent='API online';
-  document.getElementById('bankroll').textContent='$'+Number(d.starting_bankroll).toLocaleString();
-  document.getElementById('exposure').textContent='$'+Number(d.open_exposure).toLocaleString();
+  document.getElementById('bankroll').textContent=aud(d.starting_bankroll);
+  document.getElementById('exposure').textContent=aud(d.open_exposure);
   document.getElementById('active').textContent=String(d.open_positions);
-  document.getElementById('capacity').textContent='$'+Number(d.remaining_exposure).toLocaleString();
+  document.getElementById('capacity').textContent=aud(d.remaining_exposure);
   const openPositions=p.filter(function(x){return x.status==='Open'||x.status==='Unmatched'});
   document.getElementById('sets').innerHTML=openPositions.map(function(x){
    const legs=(x.legs||[]).map(function(l){
