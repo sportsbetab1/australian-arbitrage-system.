@@ -30,6 +30,7 @@ from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
 from scripts.backup_db import create_backup
 from app.odds import OddsProviderError, build_h2h_candidates, fetch_json
+from app.customer_api import router as customer_router
 
 # ============================================================
 # SYSTEM SETTINGS
@@ -166,6 +167,8 @@ app.mount(
     name="static",
 )
 
+app.include_router(customer_router)
+
 @app.exception_handler(RequestValidationError)
 async def sanitized_validation_error(request: Request, error: RequestValidationError):
     details = [
@@ -219,7 +222,7 @@ async def require_authenticated_api(request: Request, call_next):
                 status_code=403,
             )
 
-    if not path.startswith("/api/") or path in AUTH_PUBLIC_PATHS:
+    if not path.startswith("/api/") or path in AUTH_PUBLIC_PATHS or path.startswith("/api/customer/"):
         return await call_next(request)
 
     token = request.cookies.get(AUTH_COOKIE_NAME)
