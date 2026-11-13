@@ -14,6 +14,7 @@ from app.commercial_security import (
     require_member, tenant_rows,
 )
 from app.commercial_schema import migrate_commercial_schema, migrate_legacy_tenant_columns
+from app.commercial_billing import subscription_summary, fee_summary
 
 router = APIRouter(prefix="/api/customer", tags=["customer"])
 COOKIE = "arb_customer_session"
@@ -90,3 +91,21 @@ def customer_positions(tenant_id: str, request: Request):
 @router.get("/workspaces/{tenant_id}/bankroll")
 def customer_bankroll(tenant_id: str, request: Request):
     return tenant_data(request,tenant_id,"commercial_customer_bankroll_ledger")
+
+@router.get("/workspaces/{tenant_id}/subscription")
+def customer_subscription(tenant_id: str, request: Request):
+    uid = current_user(request)
+    with conn() as db:
+        try:
+            return subscription_summary(db,uid,tenant_id)
+        except AccessDenied:
+            raise HTTPException(404,"Workspace not found")
+
+@router.get("/workspaces/{tenant_id}/fees")
+def customer_fees(tenant_id: str, request: Request):
+    uid = current_user(request)
+    with conn() as db:
+        try:
+            return fee_summary(db,uid,tenant_id)
+        except AccessDenied:
+            raise HTTPException(404,"Workspace not found")
