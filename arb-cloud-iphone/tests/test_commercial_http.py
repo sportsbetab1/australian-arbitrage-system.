@@ -77,6 +77,25 @@ class CustomerHTTPIsolationTests(unittest.TestCase):
             self.assertEqual(client.get(root+"tenant-b/audit").status_code,404)
             self.assertEqual(client.get(root+"tenant-b/summary").status_code,404)
             self.assertEqual(client.get(root+"tenant-b/reports/financial").status_code,404)
+            # A tenant-A account cannot be attached to a tenant-B draft, even
+            # by a legitimate tenant-B member.
+            client.post("/api/customer/logout",headers=headers)
+            headers.pop("X-CSRF-Token",None)
+            self.assertEqual(client.post("/api/customer/login",
+                json={"email":"b@example.com","password":"correct-long-password"},headers=headers).status_code,200)
+            headers["X-CSRF-Token"]=client.get("/api/customer/csrf").json()["csrf_token"]
+            other=client.post(root+"tenant-b/positions/drafts",
+                json={"event":"Other","sport":"Soccer","market":"H2H","total_stake_cents":500},headers=headers)
+            self.assertEqual(other.status_code,201)
+            self.assertEqual(client.post(root+"tenant-b/positions/"+other.json()["id"]+"/legs",
+                json={"account_id":account.json()["id"],"selection":"Home","outcome_id":"home",
+                      "odds_milli":2000,"stake_cents":500},headers=headers).status_code,422)
+            self.assertEqual(client.get(root+"tenant-a/reports/financial").status_code,404)
+            client.post("/api/customer/logout",headers=headers)
+            headers.pop("X-CSRF-Token",None)
+            self.assertEqual(client.post("/api/customer/login",
+                json={"email":"a@example.com","password":"correct-long-password"},headers=headers).status_code,200)
+            headers["X-CSRF-Token"]=client.get("/api/customer/csrf").json()["csrf_token"]
             self.assertEqual(client.get(root+"tenant-a/reports/financial").status_code,200)
 
     def test_login_and_cross_tenant_http_denial(self):
