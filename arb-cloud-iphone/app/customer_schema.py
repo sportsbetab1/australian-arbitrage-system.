@@ -119,6 +119,10 @@ def migrate_customer_platform(con: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_customer_bankroll_tenant
         ON customer_bankroll_entries(tenant_id, created_at);
 
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_bankroll_reference
+        ON customer_bankroll_entries(tenant_id, account_id, entry_type, reference_id)
+        WHERE reference_id IS NOT NULL;
+
         CREATE TABLE IF NOT EXISTS customer_audit_log (
             id TEXT PRIMARY KEY,
             tenant_id TEXT NOT NULL REFERENCES customer_tenants(id) ON DELETE RESTRICT,
