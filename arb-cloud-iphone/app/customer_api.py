@@ -150,6 +150,43 @@ def customer_accounts(request: Request):
     return [dict(row) for row in rows]
 
 
+@router.get("/summary")
+def customer_summary(request: Request):
+    identity = _customer(request)
+    tenant_id = identity["tenant_id"]
+    with get_db() as con:
+        accounts = con.execute("""
+            SELECT COUNT(*) AS account_count,
+                   COALESCE(SUM(opening_balance_cents),0) AS opening_cents
+            FROM customer_bookmaker_accounts WHERE tenant_id=?
+        """, (tenant_id,)).fetchone()
+        ledger = con.execute("""
+            SELECT COALESCE(SUM(amount_cents),0) AS ledger_cents
+            FROM customer_bankroll_entries WHERE tenant_id=?
+        """, (tenant_id,)).fetchone()
+        positions = con.execute("""
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(CASE WHEN status IN
+                       ('approved','partially_placed','open')
+                       THEN total_stake_cents ELSE 0 END),0) AS exposure_cents
+            FROM customer_positions WHERE tenant_id=?
+        """, (tenant_id,)).fetchone()
+    bankroll_cents = int(accounts["opening_cents"]) + int(ledger["ledger_cents"])
+    cap_cents = max(0, bankroll_cents * 75 // 100)
+    exposure_cents = int(positions["exposure_cents"])
+    return {
+        "account_count": accounts["account_count"],
+        "position_count": positions["total"],
+        "verified_bankroll": False,
+        "book_balance_cents": bankroll_cents,
+        "indicative_exposure_cap_cents": cap_cents,
+        "open_exposure_cents": exposure_cents,
+        "indicative_remaining_exposure_cents": max(0, cap_cents-exposure_cents),
+        "new_positions_allowed": False,
+        "reason": "Customer bankroll verification and position workflow are not enabled.",
+    }
+
+
 @router.get("/positions")
 def customer_positions(request: Request):
     identity = _customer(request)
