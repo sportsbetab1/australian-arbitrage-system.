@@ -133,3 +133,13 @@ def migrate_customer_platform(con: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_customer_audit_tenant
         ON customer_audit_log(tenant_id, created_at);
     """)
+
+    # Existing customer databases created before the lockout fields were added
+    # must be upgraded in place without dropping users or sessions.
+    columns = {row[1] for row in con.execute("PRAGMA table_info(customer_users)")}
+    if "failed_attempts" not in columns:
+        con.execute(
+            "ALTER TABLE customer_users ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0"
+        )
+    if "locked_until" not in columns:
+        con.execute("ALTER TABLE customer_users ADD COLUMN locked_until TEXT")
