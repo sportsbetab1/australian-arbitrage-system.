@@ -428,8 +428,11 @@ function renderRiskSummary(d){
  el.textContent='Limit: '+aud(b.limit)+' • Committed: '+aud(b.committed)+' • Available: '+aud(b.available)+(overdue?' • OVERDUE: '+overdue:'');
  el.classList.toggle('warn',overdue>0);
  const status=document.getElementById('status');
- if(b.new_positions_paused){status.textContent='New positions paused — overdue buffer';status.classList.add('bad')}
- else{status.classList.remove('bad')}
+ if(d.new_positions_paused){
+  const reasons=Array.isArray(d.risk_lock_reasons)?d.risk_lock_reasons:[];
+  status.textContent='New positions paused — '+(reasons.join('; ')||'risk lock active');
+  status.classList.add('bad');
+ }else{status.classList.remove('bad')}
 }
 async function refresh(){
  if(refreshInProgress||!currentUser)return;
@@ -454,7 +457,7 @@ async function refresh(){
   if(optional[1].status==='fulfilled')renderNotifications(optional[1].value);
   if(optional[2].status==='fulfilled')renderBackups(optional[2].value);
   const degraded=optional.some(result=>result.status==='rejected');
-  if(!d.buffer?.new_positions_paused)document.getElementById('status').textContent=degraded?'API online — some secondary services unavailable':'API online';
+  if(!d.new_positions_paused)document.getElementById('status').textContent=degraded?'API online — some secondary services unavailable':'API online';
   document.getElementById('bankroll').textContent=aud(d.starting_bankroll);
   document.getElementById('exposure').textContent=aud(d.open_exposure);
   document.getElementById('active').textContent=String(d.open_positions);
