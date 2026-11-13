@@ -1333,6 +1333,149 @@ def opportunities():
 
 
 # ============================================================
+# TWO-OPERATOR POSITION DRAFT APPROVAL
+# ============================================================
+
+class PositionDraftInput(OpenPosition):
+    # Drafting never asserts that a bookmaker has accepted a bet.
+    manual_confirmation: bool = False
+
+
+def validate_draft_structure(req: OpenPosition):
+    if not req.market_rules_verified:
+        raise HTTPException(400, "Market rules must be verified before drafting.")
+    if len(set(req.possible_outcomes)) != 2 or any(
+        not item.strip() for item in req.possible_outcomes
+    ):
+        raise HTTPException(400, "A binary market requires two distinct outcomes.")
+    if {leg.outcome_id for leg in req.legs} != set(req.possible_outcomes):
+        raise HTTPException(400, "Both distinct outcomes must be covered.")
+    if any(leg.event_id != req.event_id or leg.market_id != req.market_id
+           for leg in req.legs):
+        raise HTTPException(400, "Both legs must match the event and market IDs.")
+    if any(leg.manually_accepted for leg in req.legs):
+        raise HTTPException(400, "A draft cannot claim a bookmaker accepted a bet.")
+    if len({leg.account_id for leg in req.legs}) != 2:
+        raise HTTPException(400, "Two distinct bookmaker accounts are required.")
+
+
+@app.post("/api/positions/drafts")
+def create_position_draft(req: PositionDraftInput, request: Request):
+    validate_draft_structure(req)
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        ids = [leg.account_id for leg in req.legs]
+        rows = con.execute(
+            "SELECT id, owner, bookmaker, status FROM accounts WHERE id IN (?, ?)",
+            ids,
+        ).fetchall()
+        if len(rows) != 2 or {row["owner"] for row in rows} != {"Hunta", "Jay"}:
+            raise HTTPException(400, "One active Hunta and one active Jay account are required.")
+        if any(row["status"] != "active" for row in rows):
+            raise HTTPException(409, "Both bookmaker accounts must be active.")
+        commissions = {
+            row["id"]: 6.0 if row["bookmaker"] == "Betfair" else 0.0
+            for row in rows
+        }
+        result = calculate_position_roi(req.legs, req.possible_outcomes, commissions)
+        require_qualified_open_roi(result["roi"])
+        check_new_position_allowed(con, result["total_stake"])
+        draft_id = con.execute(
+            "INSERT INTO position_drafts(created_by_user_id, payload_json) VALUES (?, ?)",
+            (request.state.auth_user["id"], req.model_dump_json()),
+        ).lastrowid
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            ("position_draft_created", json.dumps({
+                "draft_id": draft_id,
+                "created_by": request.state.auth_user["username"],
+                "worst_case_roi": result["roi"],
+            })),
+        )
+    return {"ok": True, "draft_id": draft_id,
+            "status": "AwaitingConfirmation", "required_distinct_approvals": 2,
+            "approvals": 0, **result}
+
+
+@app.get("/api/positions/drafts")
+def list_position_drafts():
+    with closing(db()) as con:
+        rows = con.execute("""
+            SELECT d.id, d.status, d.created_at, d.updated_at,
+                   u.username AS created_by,
+                   (SELECT COUNT(*) FROM position_draft_approvals a
+                    WHERE a.draft_id = d.id) AS approvals
+            FROM position_drafts d
+            JOIN auth_users u ON u.id = d.created_by_user_id
+            ORDER BY d.id DESC LIMIT 100
+        """).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/positions/drafts/{draft_id}/approve")
+def approve_position_draft(draft_id: int, request: Request):
+    user = request.state.auth_user
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        draft = con.execute(
+            "SELECT id, status FROM position_drafts WHERE id = ?", (draft_id,)
+        ).fetchone()
+        if not draft:
+            raise HTTPException(404, "Draft not found.")
+        if draft["status"] != "AwaitingConfirmation":
+            raise HTTPException(409, "Only awaiting drafts can be approved.")
+        already = con.execute(
+            "SELECT 1 FROM position_draft_approvals WHERE draft_id = ? AND user_id = ?",
+            (draft_id, user["id"]),
+        ).fetchone()
+        if already:
+            raise HTTPException(409, "This operator has already approved the draft.")
+        con.execute(
+            "INSERT INTO position_draft_approvals(draft_id, user_id) VALUES (?, ?)",
+            (draft_id, user["id"]),
+        )
+        approvals = con.execute(
+            "SELECT COUNT(*) AS total FROM position_draft_approvals WHERE draft_id = ?",
+            (draft_id,),
+        ).fetchone()["total"]
+        status = "Ready" if approvals >= 2 else "AwaitingConfirmation"
+        con.execute(
+            "UPDATE position_drafts SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (status, draft_id),
+        )
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            ("position_draft_approved", json.dumps({
+                "draft_id": draft_id, "approved_by": user["username"],
+                "approvals": approvals, "status": status,
+            })),
+        )
+    return {"ok": True, "draft_id": draft_id, "status": status,
+            "approvals": approvals, "required_distinct_approvals": 2,
+            "message": "Approval recorded. No bookmaker bet was placed."}
+
+
+@app.post("/api/positions/drafts/{draft_id}/cancel")
+def cancel_position_draft(draft_id: int, request: Request):
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        updated = con.execute("""
+            UPDATE position_drafts SET status = 'Cancelled',
+                   updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('AwaitingConfirmation', 'Ready')
+        """, (draft_id,)).rowcount
+        if not updated:
+            raise HTTPException(409, "Draft is missing or cannot be cancelled.")
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            ("position_draft_cancelled", json.dumps({
+                "draft_id": draft_id, "cancelled_by": request.state.auth_user["username"],
+            })),
+        )
+    return {"ok": True, "draft_id": draft_id, "status": "Cancelled"}
+
+
+# ============================================================
 # POSITION CREATION
 # ============================================================
 
