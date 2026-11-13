@@ -36,6 +36,26 @@ class CustomerHTTPIsolationTests(unittest.TestCase):
                 con.execute("INSERT INTO commercial_customer_bankroll_ledger(id,tenant_id,entry_type,amount_cents) VALUES (?,?,'deposit',1000)",
                             (tenant+"-ledger",tenant))
 
+    def test_customer_write_isolation_and_audit(self):
+        headers={"Origin":"http://testserver"}
+        with TestClient(app,base_url="http://testserver") as client:
+            self.assertEqual(client.post("/api/customer/login",json={"email":"a@example.com","password":"correct-long-password"},headers=headers).status_code,200)
+            root="/api/customer/workspaces/"
+            denied=client.post(root+"tenant-b/positions/drafts",
+                json={"event":"Hidden","sport":"Soccer","market":"H2H","total_stake_cents":1000},headers=headers)
+            self.assertEqual(denied.status_code,404)
+            created=client.post(root+"tenant-a/positions/drafts",
+                json={"event":"Local","sport":"Soccer","market":"H2H","total_stake_cents":1000},headers=headers)
+            self.assertEqual(created.status_code,201,created.text)
+            self.assertEqual(client.post(root+"tenant-a/accounts",
+                json={"label":"My account","bookmaker":"Unibet","opening_balance_cents":5000},headers=headers).status_code,201)
+            self.assertEqual(client.post(root+"tenant-a/bankroll",
+                json={"entry_type":"deposit","amount_cents":500,"description":"Manual deposit"},headers=headers).status_code,201)
+            self.assertEqual(client.get(root+"tenant-a/summary").status_code,200)
+            self.assertGreaterEqual(len(client.get(root+"tenant-a/audit").json()),3)
+            self.assertEqual(client.get(root+"tenant-b/audit").status_code,404)
+            self.assertEqual(client.get(root+"tenant-b/summary").status_code,404)
+
     def test_login_and_cross_tenant_http_denial(self):
         headers={"Origin":"http://testserver"}
         with TestClient(app,base_url="http://testserver") as client:
