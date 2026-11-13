@@ -228,3 +228,49 @@ def customer_create_account(payload: CustomerAccountCreate, request: Request):
     return {"id": account_id, "bookmaker": payload.bookmaker.strip(),
             "label": payload.label.strip(),
             "opening_balance_cents": payload.opening_balance_cents}
+
+
+class CustomerBankrollEntryCreate(BaseModel):
+    account_id: str = Field(min_length=1, max_length=128)
+    entry_type: str = Field(pattern="^(deposit|withdrawal|adjustment)$")
+    amount_cents: int = Field(ge=-1_000_000_000, le=1_000_000_000)
+    reference_id: str | None = Field(default=None, max_length=128)
+
+
+@router.post("/bankroll", status_code=201)
+def customer_record_bankroll(payload: CustomerBankrollEntryCreate, request: Request):
+    identity = _customer(request)
+    if identity["role"] != "owner":
+        raise HTTPException(403, "Customer owner permission required.")
+    if payload.amount_cents == 0:
+        raise HTTPException(422, "Ledger amount must be nonzero.")
+    if payload.entry_type == "deposit" and payload.amount_cents < 0:
+        raise HTTPException(422, "Deposits must be positive.")
+    if payload.entry_type == "withdrawal" and payload.amount_cents > 0:
+        raise HTTPException(422, "Withdrawals must be negative.")
+    entry_id = str(uuid.uuid4())
+    with get_db() as con:
+        con.execute("BEGIN IMMEDIATE")
+        account = con.execute("""
+            SELECT id FROM customer_bookmaker_accounts
+            WHERE tenant_id=? AND id=? AND status='active'
+        """, (identity["tenant_id"], payload.account_id)).fetchone()
+        if account is None:
+            raise HTTPException(404, "Active account not found.")
+        con.execute("""
+            INSERT INTO customer_bankroll_entries
+                (id, tenant_id, account_id, amount_cents, entry_type, reference_id)
+            VALUES (?,?,?,?,?,?)
+        """, (entry_id, identity["tenant_id"], payload.account_id,
+              payload.amount_cents, payload.entry_type, payload.reference_id))
+        con.execute("""
+            INSERT INTO customer_audit_log
+                (id, tenant_id, actor_user_id, action, details_json)
+            VALUES (?,?,?,?,?)
+        """, (str(uuid.uuid4()), identity["tenant_id"], identity["user_id"],
+              "customer_bankroll_entry_created",
+              json.dumps({"entry_id": entry_id, "account_id": payload.account_id,
+                          "amount_cents": payload.amount_cents})))
+        con.commit()
+    return {"id": entry_id, "account_id": payload.account_id,
+            "amount_cents": payload.amount_cents, "entry_type": payload.entry_type}
