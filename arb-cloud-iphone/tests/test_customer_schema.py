@@ -45,6 +45,34 @@ class CustomerSchemaIsolationTests(unittest.TestCase):
             self.con.execute("SELECT COUNT(*) FROM customer_tenants").fetchone()[0], 2
         )
 
+    def test_customer_login_lockout_columns_exist(self):
+        columns = {
+            row[1] for row in self.con.execute("PRAGMA table_info(customer_users)")
+        }
+        self.assertIn("failed_attempts", columns)
+        self.assertIn("locked_until", columns)
+
+    def test_old_customer_users_schema_upgrades_in_place(self):
+        legacy = sqlite3.connect(":memory:")
+        try:
+            legacy.execute("""
+                CREATE TABLE customer_users (
+                    id TEXT PRIMARY KEY, tenant_id TEXT, email TEXT,
+                    password_hash TEXT, role TEXT, active INTEGER, created_at TEXT
+                )
+            """)
+            legacy.execute("""
+                INSERT INTO customer_users
+                VALUES ('old-user','old-tenant','old@example.invalid','hash','member',1,'2026-01-01')
+            """)
+            migrate_customer_platform(legacy)
+            row = legacy.execute(
+                "SELECT id, failed_attempts, locked_until FROM customer_users"
+            ).fetchone()
+            self.assertEqual(row, ("old-user", 0, None))
+        finally:
+            legacy.close()
+
     def test_cross_tenant_leg_account_rejected(self):
         with self.assertRaises(sqlite3.IntegrityError):
             self.con.execute(
