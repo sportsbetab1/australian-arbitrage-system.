@@ -111,6 +111,15 @@ a{color:var(--deep-teal)}
  <div class="card"><div class="label">Open positions</div><div class="metric" id="active">0</div></div>
  <div class="card"><div class="label">Available capacity</div><div class="metric" id="capacity">$2,500</div></div>
 </div>
+<div class="grid" aria-label="Risk and profit summary">
+ <div class="card"><div class="label">Maximum exposure</div><div class="metric" id="maximumExposure">—</div></div>
+ <div class="card"><div class="label">Protected reserve</div><div class="metric" id="protectedReserve">—</div></div>
+ <div class="card"><div class="label">Settled positions</div><div class="metric" id="settledPositions">—</div></div>
+ <div class="card"><div class="label">Realised P/L</div><div class="metric" id="realisedProfit">—</div></div>
+ <div class="card"><div class="label">Reinvested</div><div class="metric" id="reinvestedProfit">—</div></div>
+ <div class="card"><div class="label">Withdrawals</div><div class="metric" id="withdrawalAllocation">—</div></div>
+</div>
+<div class="card"><b>Settlement buffer</b><div id="bufferSummary" class="muted" role="status">Loading…</div></div>
 <div class="card">
  <div class="row"><b>Scanner status</b><span class="pill" id="status">Connecting</span></div>
  <p class="muted">Minimum net theoretical ROI: 1.5% • $500 combined stake per set. The live odds feed is on-demand and provides candidates only. Verify prices, rules, limits, and account availability manually; all bets remain manual.</p>
@@ -364,10 +373,29 @@ async function startDashboard(){
  await refresh();
  if(!refreshTimer)refreshTimer=setInterval(refresh,15000)
 }
+let refreshInProgress=false;
+function aud(value){return new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(Number(value)||0)}
+function renderRiskSummary(d){
+ const set=(id,value)=>document.getElementById(id).textContent=value;
+ set('maximumExposure',aud(d.maximum_exposure));
+ set('protectedReserve',aud(Math.max(0,Number(d.starting_bankroll||0)-Number(d.maximum_exposure||0))));
+ set('settledPositions',String(d.settled_positions??0));
+ set('realisedProfit',aud(d.realised_profit_loss));
+ set('reinvestedProfit',aud(d.reinvested_profit));
+ set('withdrawalAllocation',aud(d.withdrawal_allocation));
+ const b=d.buffer||{};
+ const overdue=Number(b.overdue_items||0);
+ const el=document.getElementById('bufferSummary');
+ el.textContent='Committed: '+aud(b.committed)+' • Available: '+aud(b.available)+(overdue?' • OVERDUE: '+overdue:'');
+ el.classList.toggle('warn',overdue>0);
+}
 async function refresh(){
+ if(refreshInProgress||!currentUser)return;
+ refreshInProgress=true;
  try{
   const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts'),api('/reports/summary'),api('/notifications'),api('/backups')]);
   const d=results[1],p=results[2],o=results[3],accountRows=results[4],report=results[5],notificationData=results[6],backupData=results[7];
+  renderRiskSummary(d);
   positionsCache=p;
   renderAccounts(accountRows);renderReports(report);renderNotifications(notificationData);renderBackups(backupData);
   document.getElementById('status').textContent='API online';
@@ -386,7 +414,8 @@ async function refresh(){
    return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.status)+' • '+escapeHtml(x.market)+' • $'+Number(x.total_stake).toFixed(2)+' • '+(Number(x.expected_roi)*100).toFixed(2)+'% theoretical</div>'+legs+hedgeAction+'</div>';
   }).join('')||'<small>No open positions.</small>';
   document.getElementById('opps').innerHTML=o.map(function(x){return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • '+(Number(x.roi)*100).toFixed(2)+'% • '+escapeHtml(x.status)+'</div></div>'}).join('')||'<small>No opportunities yet.</small>';
- }catch(e){document.getElementById('status').textContent=e.message==='Please sign in to use the arbitrage dashboard.'?'Sign in required':'API unavailable'}
+ }catch(e){document.getElementById('status').textContent=!currentUser?'Sign in required':'API unavailable: '+e.message}
+ finally{refreshInProgress=false}
 }
 async function loadOddsSports(){
  const status=document.getElementById('liveOddsStatus');
