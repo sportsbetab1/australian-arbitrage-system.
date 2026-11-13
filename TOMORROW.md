@@ -8,7 +8,12 @@ The storage follow-up adds private creation of database files, append-only
 journal guards, and stronger preflight checks for actual application snapshots,
 expected owner identities, and POSIX file permissions.
 
-Local verification: 110 pytest tests passed after the storage follow-up. The real localhost smoke command
+The feed follow-up bounds provider responses and handles malformed nested data,
+sport records, labels, quota headers and extreme timestamps safely. All feed
+verification uses mocked provider responses; live coverage remains unverified.
+
+Local verification: 120 tests passed before the final timestamp regression;
+the additional timestamp check passes in the focused feed suite. The real localhost smoke command
 passed startup, authentication, rounded qualification, a fictional position and
 settlement, reports, snapshot creation and logout. Compilation and dashboard
 JavaScript syntax checks passed. See the deployment-readiness pull request for

@@ -175,6 +175,13 @@ historical closed legs without a type remain ordinary settlements.
 
 ## Feed and recovery validation
 
+Provider responses are capped at 2 MiB before JSON parsing. Malformed nested
+records, ambiguous/incomplete markets and overlong labels cannot supply feed
+candidates. The sport selector exposes validated keys/titles and boolean active
+flags; invalid quota numbers are omitted. Oversized or invalid JSON returns a
+sanitized provider error without exposing the API key. A valid response can
+still contain no usable candidates; verify provider coverage on the real host.
+
 Feed quotes must contain the event's home and away teams (plus Draw for soccer),
 with no duplicate or unexpected selection labels. Nonfinite prices are ignored;
 an event is omitted if a valid price cannot be found for every expected outcome.
