@@ -29,25 +29,22 @@ class CustomerHTTPIsolationTests(unittest.TestCase):
                 uid=create_user(con,email,"correct-long-password")
                 con.execute("UPDATE commercial_users SET email_verified_at=CURRENT_TIMESTAMP WHERE id=?",(uid,))
                 con.execute("INSERT INTO commercial_memberships(tenant_id,user_id,role) VALUES (?,?,'tenant_admin')",(tenant,uid))
-                for table in ("accounts","positions","bankroll_ledger"):
-                    # These inserts use the legacy columns with minimal required values.
-                    if table=="accounts":
-                        # Existing owner/bookmaker uniqueness is still global: customer accounts
-                        # must eventually move to a new schema before accepting writes.
-                        continue
-                    if table=="positions":
-                        con.execute("INSERT INTO positions(event,sport,market,tenant_id) VALUES (?,?,?,?)",
-                                    (tenant,"Soccer","H2H",tenant))
-                    else:
-                        con.execute("INSERT INTO bankroll_ledger(owner,entry_type,amount,tenant_id) VALUES (?,?,?,?)",
-                                    (tenant,"deposit",10,tenant))
+                con.execute("INSERT INTO commercial_customer_accounts(id,tenant_id,label,bookmaker) VALUES (?,?,?,?)",
+                            (tenant+"-account",tenant,tenant,"Sportsbet"))
+                con.execute("INSERT INTO commercial_customer_positions(id,tenant_id,event,sport,market) VALUES (?,?,?,?,?)",
+                            (tenant+"-position",tenant,tenant,"Soccer","H2H"))
+                con.execute("INSERT INTO commercial_customer_bankroll_ledger(id,tenant_id,entry_type,amount_cents) VALUES (?,?,'deposit',1000)",
+                            (tenant+"-ledger",tenant))
 
     def test_login_and_cross_tenant_http_denial(self):
         headers={"Origin":"http://testserver"}
         with TestClient(app,base_url="http://testserver") as client:
             login=client.post("/api/customer/login",json={"email":"a@example.com","password":"correct-long-password"},headers=headers)
             self.assertEqual(login.status_code,200,login.text)
-            self.assertEqual(client.get("/api/customer/workspaces/tenant-a/positions").status_code,200)
+            own = client.get("/api/customer/workspaces/tenant-a/positions")
+            self.assertEqual(own.status_code,200)
+            self.assertEqual(len(own.json()),1)
+            self.assertEqual(own.json()[0]["tenant_id"],"tenant-a")
             self.assertEqual(client.get("/api/customer/workspaces/tenant-b/positions").status_code,404)
             self.assertEqual(client.get("/api/customer/workspaces/tenant-b/bankroll").status_code,404)
             self.assertEqual(client.get("/api/customer/workspaces/tenant-b/accounts").status_code,404)
