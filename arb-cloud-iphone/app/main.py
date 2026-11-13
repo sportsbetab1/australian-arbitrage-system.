@@ -104,6 +104,9 @@ def initialise_system():
         CREATE INDEX IF NOT EXISTS idx_position_legs_position
         ON position_legs(position_id);
 
+        CREATE INDEX IF NOT EXISTS idx_position_legs_duplicate_lookup
+        ON position_legs(account_id, event_id, market_id, outcome_id, accepted, settled);
+
         CREATE INDEX IF NOT EXISTS idx_positions_status
         ON positions(status);
 
