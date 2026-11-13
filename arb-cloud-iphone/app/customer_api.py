@@ -292,12 +292,15 @@ def customer_record_bankroll(payload: CustomerBankrollEntryCreate, request: Requ
         """, (identity["tenant_id"], payload.account_id)).fetchone()
         if account is None:
             raise HTTPException(404, "Active account not found.")
-        con.execute("""
-            INSERT INTO customer_bankroll_entries
-                (id, tenant_id, account_id, amount_cents, entry_type, reference_id)
-            VALUES (?,?,?,?,?,?)
-        """, (entry_id, identity["tenant_id"], payload.account_id,
-              payload.amount_cents, payload.entry_type, payload.reference_id))
+        try:
+            con.execute("""
+                INSERT INTO customer_bankroll_entries
+                    (id, tenant_id, account_id, amount_cents, entry_type, reference_id)
+                VALUES (?,?,?,?,?,?)
+            """, (entry_id, identity["tenant_id"], payload.account_id,
+                  payload.amount_cents, payload.entry_type, payload.reference_id))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "Transaction reference already recorded.")
         con.execute("""
             INSERT INTO customer_audit_log
                 (id, tenant_id, actor_user_id, action, details_json)
