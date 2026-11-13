@@ -56,6 +56,8 @@ class CustomerAPIIsolationTests(unittest.TestCase):
                 [("ledger-a", "tenant-a", 100, "deposit"),
                  ("ledger-b", "tenant-b", 200, "deposit")],
             )
+        self.env_patch = patch.dict(os.environ, {"AUTH_COOKIE_SECURE": "false"})
+        self.env_patch.start()
         self.patch = patch("app.customer_api.get_db", self.connect)
         self.patch.start()
         self.client = TestClient(app)
@@ -64,6 +66,7 @@ class CustomerAPIIsolationTests(unittest.TestCase):
     def tearDown(self):
         self.client.close()
         self.patch.stop()
+        self.env_patch.stop()
         self.temp.cleanup()
 
     def login(self, tenant, email, password):
