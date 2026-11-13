@@ -39,6 +39,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_risk_policy.py' -v
       - name: Check authentication and HTTP security boundaries
         run: python -m unittest discover -s tests -p 'test_auth_boundary.py' -v
+      - name: Check tenant schema integrity and isolation
+        run: python -m unittest discover -s tests -p 'test_customer_schema.py' -v
       - name: Check inline JavaScript syntax
         run: |
           python - <<'PY'
