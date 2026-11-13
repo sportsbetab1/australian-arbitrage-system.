@@ -351,8 +351,9 @@ async function api(path,opts={}){
  try{r=await fetch('/api'+path,Object.assign({credentials:'same-origin',headers},opts))}
  catch(e){throw Error('Unable to reach the server. Check your connection and retry.')}
  let j={};try{j=await r.json()}catch(e){}
+ if(r.status===204)return null;
  if(!r.ok){
-  if(r.status===401&&path!=='/auth/login'){
+  if(r.status===401&&path!=='/auth/login'&&path!=='/auth/setup'){
    currentUser=null;authGeneration++;
    if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}
    showAuthGate(false);
@@ -383,7 +384,7 @@ document.getElementById('loginForm').addEventListener('submit',async function(e)
  e.preventDefault();const message=document.getElementById('authMessage');message.classList.add('hidden');
  try{
   const x=await api('/auth/login',{method:'POST',body:JSON.stringify({username:document.getElementById('loginUsername').value,password:document.getElementById('loginPassword').value})});
-  currentUser=x.user;document.getElementById('loginPassword').value='';showAuthenticated();await startDashboard();
+  authGeneration++;currentUser=x.user;document.getElementById('loginPassword').value='';showAuthenticated();await startDashboard();
  }catch(err){authError(err.message)}
 });
 document.getElementById('setupForm').addEventListener('submit',async function(e){
@@ -404,7 +405,7 @@ async function initialize(){
   const s=await api('/auth/status');
   if(s.setup_required){showAuthGate(true);return}
   if(!s.authenticated){showAuthGate(false);return}
-  currentUser=s.user;showAuthenticated();await startDashboard();
+  authGeneration++;currentUser=s.user;showAuthenticated();await startDashboard();
  }catch(e){showAuthGate(false);authError(e.message)}
 }
 async function startDashboard(){
