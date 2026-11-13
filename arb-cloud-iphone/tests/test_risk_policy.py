@@ -12,6 +12,7 @@ from app.main import (
     Candidate, Outcome, PositionLeg, calculate, calculate_position_roi,
     check_new_position_allowed, MAX_EXPOSURE, MIN_NET_ROI,
     MAX_OPEN_POSITIONS, SETTLEMENT_BUFFER_LIMIT, BOOKMAKERS,
+    require_qualified_open_roi,
 )
 
 
@@ -34,6 +35,18 @@ class FakeConnection:
 
 
 class RiskPolicyTests(unittest.TestCase):
+    def test_qualified_open_position_roi(self):
+        self.assertIsNone(require_qualified_open_roi(0.015))
+        self.assertIsNone(require_qualified_open_roi(0.08))
+
+    def test_below_floor_position_is_rejected(self):
+        with self.assertRaises(HTTPException) as error:
+            require_qualified_open_roi(0.0149)
+        self.assertEqual(error.exception.status_code, 409)
+
+    def test_unmatched_accepted_leg_can_be_recorded_for_recovery(self):
+        self.assertIsNone(require_qualified_open_roi(-0.50, allow_unmatched=True))
+
     def test_exposure_cap_and_buffer_policy(self):
         self.assertEqual(MAX_EXPOSURE, 7500.0)
         self.assertEqual(SETTLEMENT_BUFFER_LIMIT, 1000.0)
