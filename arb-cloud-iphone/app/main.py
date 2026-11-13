@@ -30,6 +30,8 @@ from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
 from scripts.backup_db import create_backup
 from app.odds import OddsProviderError, build_h2h_candidates, fetch_json
+from app.commercial_api import router as commercial_router
+from app.commercial_schema import migrate_commercial_schema, migrate_legacy_tenant_columns
 
 # ============================================================
 # SYSTEM SETTINGS
@@ -84,6 +86,11 @@ def db():
 def initialise_system():
     init_db()
     migrate_position_schema()
+    # Additive commercial migration; legacy records remain unassigned until verified.
+    with closing(db()) as commercial_con:
+        migrate_commercial_schema(commercial_con)
+        migrate_legacy_tenant_columns(commercial_con)
+        commercial_con.commit()
 
     with closing(db()) as con, con:
         con.executescript("""
@@ -158,6 +165,8 @@ app = FastAPI(
     description="Manual-confirmation arbitrage control system",
 )
 
+app.include_router(commercial_router)
+
 app.mount(
     "/static",
     StaticFiles(directory="static"),
@@ -216,6 +225,9 @@ async def require_authenticated_api(request: Request, call_next):
                 {"detail": "Request origin is not allowed."},
                 status_code=403,
             )
+
+    if path.startswith("/api/customer/"):
+        return await call_next(request)
 
     if not path.startswith("/api/") or path in AUTH_PUBLIC_PATHS:
         return await call_next(request)
