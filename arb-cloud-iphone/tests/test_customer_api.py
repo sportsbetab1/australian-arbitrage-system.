@@ -85,6 +85,41 @@ class CustomerAPIIsolationTests(unittest.TestCase):
         self.assertEqual(self.login("tenant-a", "a@example.invalid", "incorrect").status_code, 401)
         self.assertEqual(self.login("tenant-b", "a@example.invalid", "secure-pass-a").status_code, 401)
 
+    def test_five_failed_logins_lock_account(self):
+        for attempt in range(5):
+            self.assertEqual(
+                self.login("tenant-a", "a@example.invalid", "wrong").status_code, 401
+            )
+        self.assertEqual(
+            self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 423
+        )
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT failed_attempts, locked_until FROM customer_users WHERE id='user-a'"
+            ).fetchone()
+            self.assertEqual(row["failed_attempts"], 5)
+            self.assertIsNotNone(row["locked_until"])
+        # A different tenant's account must not be locked as collateral damage.
+        self.assertEqual(
+            self.login("tenant-b", "b@example.invalid", "secure-pass-b").status_code, 200
+        )
+
+    def test_expired_lock_resets_after_success(self):
+        with self.connect() as con:
+            con.execute(
+                "UPDATE customer_users SET failed_attempts=5, locked_until=? WHERE id='user-a'",
+                ("2020-01-01T00:00:00+00:00",),
+            )
+        self.assertEqual(
+            self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200
+        )
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT failed_attempts, locked_until FROM customer_users WHERE id='user-a'"
+            ).fetchone()
+            self.assertEqual(row["failed_attempts"], 0)
+            self.assertIsNone(row["locked_until"])
+
     def test_customer_a_cannot_read_customer_b_data(self):
         self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
         self.assertEqual([r["id"] for r in self.client.get("/api/customer/accounts").json()], ["account-a"])
