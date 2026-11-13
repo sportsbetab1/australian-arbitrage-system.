@@ -50,3 +50,4 @@ jobs:
           Path("/tmp/arb-inline-script.js").write_text("\n".join(scripts))
           PY
           node --check /tmp/arb-inline-script.js
+          node --check static/sw.js
