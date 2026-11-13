@@ -27,6 +27,8 @@ def migrate_customer_platform(con: sqlite3.Connection) -> None:
             role TEXT NOT NULL DEFAULT 'member'
                 CHECK(role IN ('owner','member')),
             active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+            failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK(failed_attempts >= 0),
+            locked_until TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(tenant_id, email),
             UNIQUE(tenant_id, id)
