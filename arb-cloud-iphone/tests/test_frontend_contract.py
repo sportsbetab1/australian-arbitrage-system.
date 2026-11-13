@@ -69,6 +69,19 @@ class FrontendBackendContractTests(unittest.TestCase):
         self.assertIn("if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}", self.html)
         self.assertIn("if(refreshInProgress||!currentUser)return", self.html)
 
+    def test_accepted_bet_duplicate_guard_exists(self):
+        self.assertIn("idx_position_legs_duplicate_lookup", self.backend)
+        self.assertIn("l.account_id = ?", self.backend)
+        self.assertIn("l.event_id = ?", self.backend)
+        self.assertIn("l.market_id = ?", self.backend)
+        self.assertIn("l.outcome_id = ?", self.backend)
+        self.assertIn("l.accepted = 1", self.backend)
+        self.assertIn("l.settled = 0", self.backend)
+
+    def test_open_positions_enforce_roi_floor(self):
+        self.assertIn("require_qualified_open_roi(result", self.backend)
+        self.assertIn("if not allow_unmatched and roi < MIN_NET_ROI:", self.backend)
+
     def test_exposure_governs_concurrency(self):
         self.assertIn("MAX_OPEN_POSITIONS = None", self.backend)
         self.assertNotIn("Open-position limit reached", self.backend)
