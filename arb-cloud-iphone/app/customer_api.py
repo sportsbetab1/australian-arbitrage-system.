@@ -1,0 +1,160 @@
+"""Customer API: independently authenticated, tenant-scoped read-only endpoints.
+
+No legacy operator session grants customer access. Every query uses the tenant
+resolved from the authenticated customer session, never a client-supplied ID.
+"""
+import hashlib
+import os
+import secrets
+import sqlite3
+import uuid
+from datetime import datetime, timedelta, timezone
+
+from argon2 import PasswordHasher
+from argon2.exceptions import VerificationError, VerifyMismatchError, InvalidHashError
+from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel, Field
+
+from app.database import get_db
+
+router = APIRouter(prefix="/api/customer", tags=["customer"])
+_hasher = PasswordHasher()
+_DUMMY_HASH = _hasher.hash(secrets.token_urlsafe(24))
+_COOKIE = "arb_customer_session"
+_HOURS = 12
+
+
+def _utc():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _digest(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _customer(request: Request):
+    token = request.cookies.get(_COOKIE)
+    if not token:
+        raise HTTPException(401, "Customer sign-in required.")
+    with get_db() as con:
+        row = con.execute("""
+            SELECT u.id AS user_id, u.tenant_id, u.role, u.email
+            FROM customer_sessions s
+            JOIN customer_users u
+              ON u.id=s.user_id AND u.tenant_id=s.tenant_id
+            JOIN customer_tenants t ON t.id=u.tenant_id
+            WHERE s.token_hash=? AND s.expires_at>?
+              AND u.active=1 AND t.status='active'
+        """, (_digest(token), _utc())).fetchone()
+    if row is None:
+        raise HTTPException(401, "Customer session expired or inactive.")
+    return dict(row)
+
+
+class CustomerLogin(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=128)
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=256)
+
+
+@router.post("/login")
+def customer_login(payload: CustomerLogin, response: Response):
+    # The tenant identifier is used only for login lookup, never as authority.
+    with get_db() as con:
+        row = con.execute("""
+            SELECT u.id, u.tenant_id, u.email, u.role, u.password_hash
+            FROM customer_users u
+            JOIN customer_tenants t ON t.id=u.tenant_id
+            WHERE u.tenant_id=? AND u.email=? COLLATE NOCASE
+              AND u.active=1 AND t.status='active'
+        """, (payload.tenant_id, payload.email.strip())).fetchone()
+        stored = row["password_hash"] if row else _DUMMY_HASH
+        try:
+            valid = _hasher.verify(stored, payload.password)
+        except (VerificationError, VerifyMismatchError, InvalidHashError):
+            valid = False
+        if not row or not valid:
+            raise HTTPException(401, "Invalid customer credentials.")
+        token = secrets.token_urlsafe(32)
+        expires = (datetime.now(timezone.utc) + timedelta(hours=_HOURS)).isoformat()
+        con.execute("""
+            INSERT INTO customer_sessions(token_hash, tenant_id, user_id, expires_at)
+            VALUES (?,?,?,?)
+        """, (_digest(token), row["tenant_id"], row["id"], expires))
+        con.commit()
+    response.set_cookie(_COOKIE, token, max_age=_HOURS * 3600,
+                        httponly=True, secure=os.getenv("AUTH_COOKIE_SECURE", "true").lower()=="true",
+                        samesite="strict", path="/api/customer")
+    return {"authenticated": True, "expires_at": expires}
+
+
+@router.post("/logout")
+def customer_logout(request: Request, response: Response):
+    token = request.cookies.get(_COOKIE)
+    if token:
+        with get_db() as con:
+            con.execute("DELETE FROM customer_sessions WHERE token_hash=?", (_digest(token),))
+            con.commit()
+    response.delete_cookie(_COOKIE, path="/api/customer",
+                           secure=os.getenv("AUTH_COOKIE_SECURE", "true").lower()=="true",
+                           httponly=True, samesite="strict")
+    return {"ok": True}
+
+
+@router.get("/me")
+def customer_me(request: Request):
+    return _customer(request)
+
+
+@router.get("/accounts")
+def customer_accounts(request: Request):
+    identity = _customer(request)
+    with get_db() as con:
+        rows = con.execute("""
+            SELECT id, bookmaker, label, status, opening_balance_cents
+            FROM customer_bookmaker_accounts WHERE tenant_id=?
+            ORDER BY bookmaker, label
+        """, (identity["tenant_id"],)).fetchall()
+    return [dict(row) for row in rows]
+
+
+@router.get("/positions")
+def customer_positions(request: Request):
+    identity = _customer(request)
+    with get_db() as con:
+        rows = con.execute("""
+            SELECT id, event_id, market_id, status, total_stake_cents, created_at, settled_at
+            FROM customer_positions WHERE tenant_id=?
+            ORDER BY created_at DESC, id DESC LIMIT 200
+        """, (identity["tenant_id"],)).fetchall()
+    return [dict(row) for row in rows]
+
+
+@router.get("/positions/{position_id}")
+def customer_position(request: Request, position_id: str):
+    identity = _customer(request)
+    with get_db() as con:
+        row = con.execute("""
+            SELECT id, event_id, market_id, status, total_stake_cents, created_at, settled_at
+            FROM customer_positions WHERE tenant_id=? AND id=?
+        """, (identity["tenant_id"], position_id)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Position not found.")
+        legs = con.execute("""
+            SELECT id, account_id, outcome_id, odds, stake_cents, accepted, settled
+            FROM customer_position_legs WHERE tenant_id=? AND position_id=?
+            ORDER BY id
+        """, (identity["tenant_id"], position_id)).fetchall()
+    return {"position": dict(row), "legs": [dict(leg) for leg in legs]}
+
+
+@router.get("/bankroll")
+def customer_bankroll(request: Request):
+    identity = _customer(request)
+    with get_db() as con:
+        rows = con.execute("""
+            SELECT id, account_id, amount_cents, entry_type, created_at
+            FROM customer_bankroll_entries WHERE tenant_id=?
+            ORDER BY created_at DESC, id DESC LIMIT 200
+        """, (identity["tenant_id"],)).fetchall()
+    return [dict(row) for row in rows]
