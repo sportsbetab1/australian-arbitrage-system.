@@ -297,10 +297,22 @@ async function recordAccountTransaction(accountId,transactionType){
 }
 function slug(value){return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'outcome'}
 async function api(path,opts={}){
- const headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
- const r=await fetch('/api'+path,Object.assign({credentials:'same-origin',headers:headers},opts));
- let j={};try{j=await r.json()}catch(e){j={}}
- if(!r.ok){if(r.status===401&&path!=='/auth/login'){showAuthGate(false)}throw Error(j.detail||'Request failed')}
+ const headers=Object.assign({'Accept':'application/json'},opts.headers||{});
+ if(opts.body!==undefined && !(opts.body instanceof FormData))headers['Content-Type']='application/json';
+ let r;
+ try{r=await fetch('/api'+path,Object.assign({credentials:'same-origin',headers},opts))}
+ catch(e){throw Error('Unable to reach the server. Check your connection and retry.')}
+ let j={};try{j=await r.json()}catch(e){}
+ if(!r.ok){
+  if(r.status===401&&path!=='/auth/login'){
+   currentUser=null;
+   if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}
+   showAuthGate(false);
+  }
+  const detail=j.detail;
+  const message=typeof detail==='string'?detail:Array.isArray(detail)?detail.map(x=>x.msg||'Invalid field').join('; '):'Request failed (HTTP '+r.status+')';
+  throw Error(message);
+ }
  return j
 }
 function showAuthGate(setup){
@@ -337,7 +349,7 @@ document.getElementById('setupForm').addEventListener('submit',async function(e)
 });
 async function logout(){
  try{await api('/auth/logout',{method:'POST',body:'{}'})}catch(e){}
- currentUser=null;lastOpportunity=null;lastCandidate=null;showAuthGate(false);updateVettingAvailability();
+ currentUser=null;lastOpportunity=null;lastCandidate=null;if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}showAuthGate(false);updateVettingAvailability();
 }
 async function initialize(){
  renderLegs();
