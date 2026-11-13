@@ -436,13 +436,25 @@ async function refresh(){
  refreshInProgress=true;
  const generation=authGeneration;
  try{
-  const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts'),api('/reports/summary'),api('/notifications'),api('/backups')]);
+  // Keep core risk/position data independent from optional report and backup
+  // services. An optional endpoint outage must not hide exposure information.
+  const core=await Promise.all([
+   api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts')
+  ]);
   if(!currentUser||generation!==authGeneration)return;
-  const d=results[1],p=results[2],o=results[3],accountRows=results[4],report=results[5],notificationData=results[6],backupData=results[7];
+  const d=core[1],p=core[2],o=core[3],accountRows=core[4];
   renderRiskSummary(d);
   positionsCache=p;
-  renderAccounts(accountRows);renderReports(report);renderNotifications(notificationData);renderBackups(backupData);
-  if(!d.buffer?.new_positions_paused)document.getElementById('status').textContent='API online';
+  renderAccounts(accountRows);
+  const optional=await Promise.allSettled([
+   api('/reports/summary'),api('/notifications'),api('/backups')
+  ]);
+  if(!currentUser||generation!==authGeneration)return;
+  if(optional[0].status==='fulfilled')renderReports(optional[0].value);
+  if(optional[1].status==='fulfilled')renderNotifications(optional[1].value);
+  if(optional[2].status==='fulfilled')renderBackups(optional[2].value);
+  const degraded=optional.some(result=>result.status==='rejected');
+  if(!d.buffer?.new_positions_paused)document.getElementById('status').textContent=degraded?'API online — some secondary services unavailable':'API online';
   document.getElementById('bankroll').textContent=aud(d.starting_bankroll);
   document.getElementById('exposure').textContent=aud(d.open_exposure);
   document.getElementById('active').textContent=String(d.open_positions);
