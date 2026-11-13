@@ -244,9 +244,14 @@ async def prevent_api_caching(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    if request.url.path.startswith("/api/"):
-        response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+    if request.url.path.startswith("/api/") or request.url.path == "/":
+        # Financial and authenticated UI responses must not be stored by shared
+        # proxies or browser caches after logout or account switching.
+        response.headers["Cache-Control"] = "no-store, private"
         response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     return response
 
 
