@@ -108,6 +108,25 @@ CREATE TABLE IF NOT EXISTS commercial_customer_positions (
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_customer_positions_tenant ON commercial_customer_positions(tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_accounts_tenant_id
+ ON commercial_customer_accounts(tenant_id,id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_positions_tenant_id
+ ON commercial_customer_positions(tenant_id,id);
+CREATE TABLE IF NOT EXISTS commercial_customer_position_legs (
+ id TEXT PRIMARY KEY,
+ tenant_id TEXT NOT NULL,
+ position_id TEXT NOT NULL,
+ account_id TEXT NOT NULL,
+ selection TEXT NOT NULL,
+ outcome_id TEXT NOT NULL,
+ odds_milli INTEGER NOT NULL CHECK(odds_milli>1000),
+ stake_cents INTEGER NOT NULL CHECK(stake_cents>0),
+ status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','accepted','settled','cancelled')),
+ FOREIGN KEY(tenant_id,position_id) REFERENCES commercial_customer_positions(tenant_id,id),
+ FOREIGN KEY(tenant_id,account_id) REFERENCES commercial_customer_accounts(tenant_id,id),
+ UNIQUE(tenant_id,position_id,outcome_id)
+);
+CREATE INDEX IF NOT EXISTS idx_customer_legs_position ON commercial_customer_position_legs(tenant_id,position_id);
 CREATE TABLE IF NOT EXISTS commercial_customer_bankroll_ledger (
  id TEXT PRIMARY KEY,
  tenant_id TEXT NOT NULL REFERENCES commercial_tenants(id),
