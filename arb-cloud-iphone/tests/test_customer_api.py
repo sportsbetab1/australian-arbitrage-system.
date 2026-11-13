@@ -231,6 +231,21 @@ class CustomerAPIIsolationTests(unittest.TestCase):
         self.assertEqual(self.login("tenant-b", "b@example.invalid", "secure-pass-b").status_code, 200)
         self.assertEqual(self.client.get("/api/customer/audit").status_code, 403)
 
+    def test_duplicate_bankroll_reference_is_not_double_posted(self):
+        self.assertEqual(self.login("tenant-a", "a@example.invalid", "secure-pass-a").status_code, 200)
+        body = {"account_id": "account-a", "entry_type": "deposit",
+                "amount_cents": 500, "reference_id": "external-transaction-123"}
+        first = self.client.post("/api/customer/bankroll", json=body, headers=self.origin)
+        second = self.client.post("/api/customer/bankroll", json=body, headers=self.origin)
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 409)
+        with self.connect() as con:
+            row = con.execute("""
+                SELECT COUNT(*), SUM(amount_cents) FROM customer_bankroll_entries
+                WHERE tenant_id='tenant-a' AND reference_id='external-transaction-123'
+            """).fetchone()
+            self.assertEqual(tuple(row), (1, 500))
+
     def test_member_cannot_write_bankroll(self):
         self.assertEqual(self.login("tenant-b", "b@example.invalid", "secure-pass-b").status_code, 200)
         self.assertEqual(
