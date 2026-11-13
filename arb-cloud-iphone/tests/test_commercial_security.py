@@ -4,7 +4,7 @@ from app.commercial_schema import migrate_commercial_schema, migrate_legacy_tena
 from app.commercial_security import (
     AccessDenied, create_user, authenticate, create_session, resolve_session,
     revoke_session, require_member, tenant_rows, request_sensitive_action,
-    approve_sensitive_action,
+    approve_sensitive_action, consume_approved_action,
 )
 
 class TenantSecurityTests(unittest.TestCase):
@@ -66,6 +66,9 @@ class TenantSecurityTests(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT status FROM commercial_owner_approvals WHERE id=?",(approval,)).fetchone()[0],"approved")
         with self.assertRaises(AccessDenied):
             approve_sensitive_action(self.db,self.j,approval)
+        consume_approved_action(self.db,approval,"change_profit_fee","sha256:example")
+        with self.assertRaises(AccessDenied):
+            consume_approved_action(self.db,approval,"change_profit_fee","sha256:example")
 
 if __name__ == "__main__":
     unittest.main()
