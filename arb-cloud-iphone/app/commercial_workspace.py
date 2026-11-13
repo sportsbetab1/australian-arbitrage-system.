@@ -66,3 +66,30 @@ def workspace_summary(con, actor, tenant_id):
     return {"accounts":accounts,"positions_by_status":{r["status"]:r["count"] for r in positions},
             "bankroll_ledger_total_cents":balance,"currency":"AUD",
             "note":"Recorded ledger total; not verified bookmaker balance"}
+
+def add_draft_leg(con, actor, tenant_id, position_id, account_id, selection, outcome_id, odds_milli, stake_cents):
+    require_member(con,actor,tenant_id,("tenant_admin","operator"))
+    position=con.execute("""SELECT status FROM commercial_customer_positions
+        WHERE id=? AND tenant_id=?""",(position_id,tenant_id)).fetchone()
+    if not position or position["status"]!="draft":
+        raise ValueError("Draft position not found")
+    if not selection.strip() or not outcome_id.strip() or odds_milli<=1000 or stake_cents<=0:
+        raise ValueError("Invalid leg")
+    lid=new_id()
+    con.execute("""INSERT INTO commercial_customer_position_legs
+      (id,tenant_id,position_id,account_id,selection,outcome_id,odds_milli,stake_cents)
+      VALUES (?,?,?,?,?,?,?,?)""",
+      (lid,tenant_id,position_id,account_id,selection.strip(),outcome_id.strip(),odds_milli,stake_cents))
+    audit(con,tenant_id,actor,"customer.draft_leg_added","position_leg",lid)
+    return lid
+
+def draft_detail(con, actor, tenant_id, position_id):
+    require_member(con,actor,tenant_id)
+    row=con.execute("""SELECT * FROM commercial_customer_positions
+       WHERE tenant_id=? AND id=?""",(tenant_id,position_id)).fetchone()
+    if row is None:
+        raise AccessDenied("Position not found")
+    legs=con.execute("""SELECT id,account_id,selection,outcome_id,odds_milli,stake_cents,status
+       FROM commercial_customer_position_legs
+       WHERE tenant_id=? AND position_id=? ORDER BY id""",(tenant_id,position_id)).fetchall()
+    return {"position":dict(row),"legs":[dict(x) for x in legs]}
