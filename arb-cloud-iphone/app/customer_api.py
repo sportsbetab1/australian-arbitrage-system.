@@ -180,6 +180,27 @@ def customer_position(request: Request, position_id: str):
     return {"position": dict(row), "legs": [dict(leg) for leg in legs]}
 
 
+@router.get("/accounts/{account_id}")
+def customer_account(request: Request, account_id: str):
+    identity = _customer(request)
+    with get_db() as con:
+        row = con.execute("""
+            SELECT id, bookmaker, label, status, opening_balance_cents
+            FROM customer_bookmaker_accounts WHERE tenant_id=? AND id=?
+        """, (identity["tenant_id"], account_id)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Account not found.")
+        ledger = con.execute("""
+            SELECT COALESCE(SUM(amount_cents),0) AS net_entries_cents
+            FROM customer_bankroll_entries
+            WHERE tenant_id=? AND account_id=?
+        """, (identity["tenant_id"], account_id)).fetchone()
+    result = dict(row)
+    result["ledger_net_cents"] = int(ledger["net_entries_cents"])
+    result["balance_cents"] = result["opening_balance_cents"] + result["ledger_net_cents"]
+    return result
+
+
 @router.get("/bankroll")
 def customer_bankroll(request: Request):
     identity = _customer(request)
