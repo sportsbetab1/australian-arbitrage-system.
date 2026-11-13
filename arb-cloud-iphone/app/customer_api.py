@@ -4,6 +4,7 @@ No legacy operator session grants customer access. Every query uses the tenant
 resolved from the authenticated customer session, never a client-supplied ID.
 """
 import hashlib
+import json
 import os
 import secrets
 import sqlite3
@@ -189,3 +190,39 @@ def customer_bankroll(request: Request):
             ORDER BY created_at DESC, id DESC LIMIT 200
         """, (identity["tenant_id"],)).fetchall()
     return [dict(row) for row in rows]
+
+
+class CustomerAccountCreate(BaseModel):
+    bookmaker: str = Field(min_length=1, max_length=100)
+    label: str = Field(min_length=1, max_length=100)
+    opening_balance_cents: int = Field(default=0, ge=0, le=1_000_000_000)
+
+
+@router.post("/accounts", status_code=201)
+def customer_create_account(payload: CustomerAccountCreate, request: Request):
+    identity = _customer(request)
+    if identity["role"] != "owner":
+        raise HTTPException(403, "Customer owner permission required.")
+    account_id = str(uuid.uuid4())
+    with get_db() as con:
+        try:
+            con.execute("""
+                INSERT INTO customer_bookmaker_accounts
+                    (id, tenant_id, bookmaker, label, opening_balance_cents)
+                VALUES (?,?,?,?,?)
+            """, (account_id, identity["tenant_id"],
+                  payload.bookmaker.strip(), payload.label.strip(),
+                  payload.opening_balance_cents))
+            con.execute("""
+                INSERT INTO customer_audit_log
+                    (id, tenant_id, actor_user_id, action, details_json)
+                VALUES (?,?,?,?,?)
+            """, (str(uuid.uuid4()), identity["tenant_id"], identity["user_id"],
+                  "customer_account_created",
+                  json.dumps({"account_id": account_id})))
+            con.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "Account label already exists or is invalid.")
+    return {"id": account_id, "bookmaker": payload.bookmaker.strip(),
+            "label": payload.label.strip(),
+            "opening_balance_cents": payload.opening_balance_cents}
