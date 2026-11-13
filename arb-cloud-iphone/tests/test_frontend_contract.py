@@ -51,6 +51,20 @@ class FrontendBackendContractTests(unittest.TestCase):
         self.assertIn("if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}", self.html)
         self.assertIn("if(refreshInProgress||!currentUser)return", self.html)
 
+    def test_exposure_governs_concurrency(self):
+        self.assertIn("MAX_OPEN_POSITIONS = None", self.backend)
+        self.assertNotIn("Open-position limit reached", self.backend)
+        self.assertIn("if proposed > MAX_EXPOSURE:", self.backend)
+
+    def test_removed_bookmaker_not_in_supported_list(self):
+        bookmaker_block = self.backend.split("BOOKMAKERS = [", 1)[1].split("]", 1)[0]
+        self.assertNotIn('"TAB"', bookmaker_block)
+
+    def test_no_hardcoded_financial_dashboard_values(self):
+        for element in ("bankroll", "exposure", "active", "capacity"):
+            with self.subTest(element=element):
+                self.assertRegex(self.html, r'id="' + element + r'">—</div>')
+
     def test_manual_betting_notice_remains(self):
         self.assertIn("MANUAL BETTING", self.html)
         self.assertIn("This app does not open bookmaker sites or place bets.", self.html)
