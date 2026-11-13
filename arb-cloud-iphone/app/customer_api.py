@@ -62,7 +62,8 @@ def customer_login(payload: CustomerLogin, response: Response):
     # The tenant identifier is used only for login lookup, never as authority.
     with get_db() as con:
         row = con.execute("""
-            SELECT u.id, u.tenant_id, u.email, u.role, u.password_hash
+            SELECT u.id, u.tenant_id, u.email, u.role, u.password_hash,
+                   u.failed_attempts, u.locked_until
             FROM customer_users u
             JOIN customer_tenants t ON t.id=u.tenant_id
             WHERE u.tenant_id=? AND u.email=? COLLATE NOCASE
@@ -73,14 +74,44 @@ def customer_login(payload: CustomerLogin, response: Response):
             valid = _hasher.verify(stored, payload.password)
         except (VerificationError, VerifyMismatchError, InvalidHashError):
             valid = False
-        if not row or not valid:
+
+        # Serialize login decisions to avoid concurrent failures losing counts,
+        # and verify the account wasn't disabled or re-keyed during hashing.
+        con.execute("BEGIN IMMEDIATE")
+        fresh = con.execute("""
+            SELECT u.id, u.tenant_id, u.password_hash, u.failed_attempts,
+                   u.locked_until, u.active, t.status AS tenant_status
+            FROM customer_users u
+            JOIN customer_tenants t ON t.id=u.tenant_id
+            WHERE u.tenant_id=? AND u.email=? COLLATE NOCASE
+        """, (payload.tenant_id, payload.email.strip())).fetchone()
+        current_time = _utc()
+        if fresh and fresh["locked_until"] and fresh["locked_until"] > current_time:
+            raise HTTPException(423, "Customer account temporarily locked.")
+        valid = bool(valid and row and fresh and
+                     fresh["password_hash"] == stored and fresh["active"] == 1
+                     and fresh["tenant_status"] == "active")
+        if not valid:
+            if fresh:
+                attempts = (0 if fresh["locked_until"] else int(fresh["failed_attempts"])) + 1
+                until = ((datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+                         if attempts >= 5 else None)
+                con.execute("""
+                    UPDATE customer_users SET failed_attempts=?, locked_until=?
+                    WHERE id=? AND tenant_id=?
+                """, (attempts, until, fresh["id"], fresh["tenant_id"]))
+                con.commit()
             raise HTTPException(401, "Invalid customer credentials.")
+        con.execute("""
+            UPDATE customer_users SET failed_attempts=0, locked_until=NULL
+            WHERE id=? AND tenant_id=?
+        """, (fresh["id"], fresh["tenant_id"]))
         token = secrets.token_urlsafe(32)
         expires = (datetime.now(timezone.utc) + timedelta(hours=_HOURS)).isoformat()
         con.execute("""
             INSERT INTO customer_sessions(token_hash, tenant_id, user_id, expires_at)
             VALUES (?,?,?,?)
-        """, (_digest(token), row["tenant_id"], row["id"], expires))
+        """, (_digest(token), fresh["tenant_id"], fresh["id"], expires))
         con.commit()
     response.set_cookie(_COOKIE, token, max_age=_HOURS * 3600,
                         httponly=True, secure=os.getenv("AUTH_COOKIE_SECURE", "true").lower()=="true",
