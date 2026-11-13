@@ -56,10 +56,9 @@ BOOKMAKERS = [
     "Dabble",
     "Picklebet",
     "Ladbrokes",
-    "TAB",
 ]
 
-MAX_OPEN_POSITIONS = 15
+MAX_OPEN_POSITIONS = None  # Exposure and other risk locks, not a slot count, govern concurrency.
 
 MAX_EXPOSURE = round(
     STARTING_BANKROLL * MAX_EXPOSURE_PERCENT, 2
@@ -779,15 +778,6 @@ def check_new_position_allowed(con, additional_exposure):
             409,
             "New positions paused: a settlement-buffer commitment "
             "has exceeded its 24-hour deadline.",
-        )
-
-    open_positions = con.execute(
-        "SELECT COUNT(*) AS total FROM positions WHERE status IN ('Open', 'Unmatched')"
-    ).fetchone()["total"]
-    if open_positions >= MAX_OPEN_POSITIONS:
-        raise HTTPException(
-            409,
-            f"Open-position limit reached ({MAX_OPEN_POSITIONS}). Settle an existing position before adding another.",
         )
 
     current = get_open_exposure(con)
