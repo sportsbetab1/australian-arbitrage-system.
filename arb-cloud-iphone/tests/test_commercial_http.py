@@ -76,6 +76,8 @@ class CustomerHTTPIsolationTests(unittest.TestCase):
             self.assertGreaterEqual(len(client.get(root+"tenant-a/audit").json()),3)
             self.assertEqual(client.get(root+"tenant-b/audit").status_code,404)
             self.assertEqual(client.get(root+"tenant-b/summary").status_code,404)
+            self.assertEqual(client.get(root+"tenant-b/reports/financial").status_code,404)
+            self.assertEqual(client.get(root+"tenant-a/reports/financial").status_code,200)
 
     def test_login_and_cross_tenant_http_denial(self):
         headers={"Origin":"http://testserver"}
