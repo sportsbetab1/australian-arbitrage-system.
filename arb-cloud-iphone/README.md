@@ -25,6 +25,32 @@ These values describe the backend constants. They are planning controls, not bal
 
 The dashboard supports Hunta and Jay accounts with Argon2 password hashes, HTTP-only sessions, a private setup token, a 12-hour session lifetime, and a 15-minute lock after five failed sign-in attempts. Set a long random `AUTH_SETUP_TOKEN` in the hosting environment before first startup. First-run setup creates Hunta's login only. Jay can later select **Set up Jay login** on the sign-in screen and use the private token to choose his own password. Jay cannot sign in until he completes setup. The token cannot overwrite either existing login; password recovery remains an administrator task.
 
+### Private dashboard interface
+
+The navy dashboard uses sidebar navigation on desktop and bottom navigation on
+iPhone. The front page shows capital, exposure limits, reserve, account inventory,
+settled P/L, buffer availability, profit allocations, open positions and recent
+notifications. Accounts, Scanner, Positions, Settlements, Analytics, Notifications
+and Settings have separate views; on phones the extra views are under **More**.
+
+The portfolio chart uses the report's actual monthly settled P/L, accumulated
+chronologically. It shows an empty state before the first settlement. The scanner
+runs only on request; the radar animates only while a provider request is pending.
+Account counts represent ledger records, not connected bookmaker accounts. Push
+status describes this device's subscription, not verified delivery. All bets
+remain manual. Navigation and background refresh preserve calculator and hedge
+drafts; API failures display a freshness warning.
+
+For browser verification, with Playwright and Chromium available:
+
+```sh
+python tests/dashboard_browser_check.py --server-python ../.venv/bin/python
+```
+
+This starts a disposable server/database, uses fictional fixture records, checks
+five viewport sizes and writes screenshots under the ignored `artifacts/` folder.
+It makes no live odds-provider or bookmaker calls.
+
 Concurrent sign-in attempts update failure counts under a serialized database
 transaction. Account status and password hash are rechecked after verification
 before a session is issued. Deactivated users cannot use existing sessions or

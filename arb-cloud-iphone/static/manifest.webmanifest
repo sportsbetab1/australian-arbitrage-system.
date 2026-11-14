@@ -3,8 +3,8 @@
   "short_name": "Arb Control",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f2f5f8",
-  "theme_color": "#10263d",
+  "background_color": "#0c1029",
+  "theme_color": "#131a43",
   "icons": [
     {
       "src": "/static/icon-192.png",

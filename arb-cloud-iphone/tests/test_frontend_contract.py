@@ -12,6 +12,7 @@ class FrontendBackendContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.html = FRONTEND.read_text(encoding="utf-8")
+        cls.css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
         cls.backend = BACKEND.read_text(encoding="utf-8")
 
     def test_dashboard_elements_are_present(self):
@@ -56,9 +57,9 @@ class FrontendBackendContractTests(unittest.TestCase):
         self.assertIn("some secondary services unavailable", self.html)
 
     def test_dark_theme_has_accessible_focus_indicators(self):
-        self.assertIn("--app-bg:#0A1425", self.html)
-        self.assertIn("color-scheme:dark", self.html)
-        self.assertIn("outline:3px solid #8EE6FF", self.html)
+        self.assertIn("--app-bg:#0A1425", self.css)
+        self.assertIn("color-scheme:dark", self.css)
+        self.assertIn("outline:3px solid #8EE6FF", self.css)
 
     def test_buffer_pause_is_visible(self):
         self.assertIn("new_positions_paused", self.html)
@@ -94,7 +95,7 @@ class FrontendBackendContractTests(unittest.TestCase):
     def test_no_hardcoded_financial_dashboard_values(self):
         for element in ("bankroll", "exposure", "active", "capacity"):
             with self.subTest(element=element):
-                self.assertRegex(self.html, r'id="' + element + r'">—</div>')
+                self.assertIsNotNone(re.search(r'id="' + element + r'">—</(?:div|b)>', self.html))
 
     def test_manual_betting_notice_remains(self):
         self.assertIn("MANUAL BETTING", self.html)

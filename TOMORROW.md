@@ -4,6 +4,14 @@
 
 Public paid/customer development is paused at the owner's request. The next
 work is the private dashboard, Render hosting and The Odds API connection.
+The UI overhaul follows the owner's supplied reference: navy sidebar, cyan,
+indigo, violet and mint summary cards, a real monthly cumulative P/L chart,
+radar-style on-demand scanner, buffer/allocation/status panels and compact
+positions/notifications. Mobile uses bottom navigation. Tools now have separate
+views. No reference-image profit, live timer or bookmaker-connection claims are
+hardcoded. `static/dashboard.css` is the single stylesheet; the mobile manifest
+uses its navy palette. `tests/dashboard_browser_check.py` verifies the interface
+with disposable data and writes ignored screenshots.
 The owner requested Hunta-only first-run setup. The current setup screen creates
 only Hunta's login. Jay can later use **Set up Jay login** and the private setup
 token to create his own password; setup cannot overwrite existing or disabled
