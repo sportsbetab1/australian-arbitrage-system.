@@ -30,7 +30,7 @@ from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
 from scripts.backup_db import create_backup
 from app.odds import OddsProviderError, build_h2h_candidates, fetch_json
-from app.global_scanner import supported_sports, REGIONS, SCAN_CONFIG, reserve_scan, reconcile_scan, eligible_bookmakers
+from app.global_scanner import supported_sports, REGIONS, SCAN_CONFIG, reserve_scan, reconcile_scan, eligible_bookmakers, reserve_trial_scan, trial_status, TRIAL_REGIONS
 from app.customer_api import router as customer_router
 
 # ============================================================
@@ -1283,7 +1283,28 @@ def global_scan_config():
         "automated_weekly_limit": 1_500_000,
         "protected_weekly_reserve": 500_000,
         "billing_week_note": "UTC Monday default; verify against provider billing reset.",
+        "trial_mode": True,
+        "trial_limit": 350,
+        "trial_duration_hours": 24,
+        "trial_regions": list(TRIAL_REGIONS),
     }
+
+
+@app.get("/api/odds/global/trial/status")
+def global_trial_status():
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        # Create the ledger before first trial_status() invocation.
+        con.execute("""CREATE TABLE IF NOT EXISTS global_scan_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_start TEXT NOT NULL,
+            sport_key TEXT NOT NULL,
+            requested_at TEXT NOT NULL,
+            reserved_points INTEGER NOT NULL,
+            actual_points INTEGER,
+            status TEXT NOT NULL
+        )""")
+        return trial_status(con, now())
 
 
 @app.post("/api/odds/global/scan/{sport_key}")
@@ -1294,7 +1315,7 @@ def scan_global_competition(sport_key: str):
     timestamp = now()
     with closing(db()) as con:
         con.execute("BEGIN IMMEDIATE")
-        reservation_id, blocked = reserve_scan(con, sport_key, timestamp)
+        reservation_id, blocked = reserve_trial_scan(con, sport_key, timestamp)
         con.commit()
     if blocked:
         raise HTTPException(429, f"Global scan blocked: {blocked}")
@@ -1303,7 +1324,7 @@ def scan_global_competition(sport_key: str):
             os.getenv("ODDS_API_KEY", ""),
             f"sports/{sport_key}/odds",
             {
-                "regions": ",".join(SCAN_CONFIG["regions"]),
+                "regions": ",".join(TRIAL_REGIONS),
                 "markets": "h2h",
                 "oddsFormat": "decimal",
                 "dateFormat": "iso",
@@ -1368,6 +1389,8 @@ def scan_global_competition(sport_key: str):
 
 @app.get("/api/odds/scan/{sport_key}")
 def scan_live_odds(sport_key: str):
+    raise HTTPException(403, "Legacy live odds scanning is disabled during the 350-credit trial.")
+
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", sport_key):
         raise HTTPException(400, "Invalid odds-provider sport key.")
     try:
