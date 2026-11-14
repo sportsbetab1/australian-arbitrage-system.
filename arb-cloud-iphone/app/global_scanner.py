@@ -49,3 +49,73 @@ def eligible_bookmakers(events, allowed):
         if matching:
             filtered.append({**event, "bookmakers": matching})
     return filtered
+
+# Runtime configuration is intentionally immutable. Operator changes require review.
+SCAN_CONFIG = {
+    "mode": "adaptive",
+    "automated_budget_percent": 75,
+    "minimum_net_roi_percent": 2.0,
+    "regions": REGIONS,
+    "event_window_hours": 24,
+    "minimum_repeat_interval_minutes": 5,
+}
+RESERVATION_POINTS = len(REGIONS)  # one h2h market in each region
+
+
+def billing_week_start(at):
+    """UTC Monday is a conservative default; align with provider billing separately."""
+    at = at.astimezone(timezone.utc)
+    monday = at.replace(hour=0, minute=0, second=0, microsecond=0)
+    from datetime import timedelta
+    return monday - timedelta(days=monday.weekday())
+
+
+def reserve_scan(con, sport_key, now, estimated_points=RESERVATION_POINTS):
+    """Atomic, durable quota reservation. Caller must BEGIN IMMEDIATE and commit.
+
+    Reservation remains charged even if the provider times out; never refund
+    uncertain requests. Usage reconciliation can increase, never decrease, cost.
+    """
+    from datetime import timedelta
+    if not KEY_PATTERN.fullmatch(sport_key):
+        raise ValueError("Invalid competition key")
+    week = billing_week_start(now).isoformat()
+    con.execute("""CREATE TABLE IF NOT EXISTS global_scan_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        week_start TEXT NOT NULL,
+        sport_key TEXT NOT NULL,
+        requested_at TEXT NOT NULL,
+        reserved_points INTEGER NOT NULL,
+        actual_points INTEGER,
+        status TEXT NOT NULL
+    )""")
+    last = con.execute(
+        "SELECT requested_at FROM global_scan_ledger WHERE sport_key=? ORDER BY id DESC LIMIT 1",
+        (sport_key,),
+    ).fetchone()
+    if last:
+        previous = datetime.fromisoformat(last[0])
+        if now - previous < timedelta(minutes=SCAN_CONFIG["minimum_repeat_interval_minutes"]):
+            return None, "cooldown"
+    used = con.execute(
+        "SELECT COALESCE(SUM(MAX(reserved_points, COALESCE(actual_points, 0))), 0) "
+        "FROM global_scan_ledger WHERE week_start=?", (week,),
+    ).fetchone()[0]
+    elapsed = (now - billing_week_start(now)).total_seconds()
+    if available_automated_points(used, elapsed) < estimated_points:
+        return None, "quota_or_pacing"
+    cursor = con.execute(
+        "INSERT INTO global_scan_ledger(week_start,sport_key,requested_at,reserved_points,status) "
+        "VALUES (?,?,?,?,?)", (week, sport_key, now.isoformat(), estimated_points, "reserved"),
+    )
+    return cursor.lastrowid, None
+
+
+def reconcile_scan(con, scan_id, actual_points, status):
+    """Keep maximum of reserved and reported cost to fail safely."""
+    if actual_points is not None and (not isinstance(actual_points, (int, float)) or actual_points < 0):
+        raise ValueError("Invalid provider cost")
+    con.execute(
+        "UPDATE global_scan_ledger SET actual_points=?,status=? WHERE id=?",
+        (None if actual_points is None else int(actual_points), status, scan_id),
+    )
