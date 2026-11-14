@@ -26,6 +26,7 @@ jobs:
       - run: python -m scripts.smoke_local
       - run: python tests/extract_frontend.py
       - run: node --check /tmp/arbitrage-dashboard.js
+      - run: node tests/test_service_worker.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: windows-recovery-source

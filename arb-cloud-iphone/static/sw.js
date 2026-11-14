@@ -1,6 +1,9 @@
 self.addEventListener('push', event => {
   let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch (e) {}
+  try {
+    const payload = event.data ? event.data.json() : {};
+    data = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+  } catch (e) {}
   const title = typeof data.title === 'string' ? data.title.slice(0, 120) : 'Arbitrage alert';
   const body = typeof data.body === 'string'
     ? data.body.slice(0, 240)

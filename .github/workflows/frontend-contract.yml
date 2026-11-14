@@ -56,3 +56,4 @@ jobs:
           PY
           node --check /tmp/arb-inline-script.js
           node --check static/sw.js
+          node tests/test_service_worker.cjs
