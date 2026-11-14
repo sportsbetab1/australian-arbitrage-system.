@@ -23,7 +23,7 @@ These values describe the backend constants. They are planning controls, not bal
 
 ## Sign-in and assisted vetting
 
-The dashboard supports Hunta and Jay accounts with Argon2 password hashes, HTTP-only sessions, a one-time first-run setup token, a 12-hour session lifetime, and a 15-minute lock after five failed sign-in attempts. Set a long random `AUTH_SETUP_TOKEN` in the hosting environment before first startup. The token is only for initial setup; password recovery is currently an administrator task.
+The dashboard supports Hunta and Jay accounts with Argon2 password hashes, HTTP-only sessions, a private setup token, a 12-hour session lifetime, and a 15-minute lock after five failed sign-in attempts. Set a long random `AUTH_SETUP_TOKEN` in the hosting environment before first startup. First-run setup creates Hunta's login only. Jay can later select **Set up Jay login** on the sign-in screen and use the private token to choose his own password. Jay cannot sign in until he completes setup. The token cannot overwrite either existing login; password recovery remains an administrator task.
 
 Concurrent sign-in attempts update failure counts under a serialized database
 transaction. Account status and password hash are rechecked after verification
@@ -90,7 +90,8 @@ After creating `.venv` and installing the requirements, run from this directory:
 
 The launcher binds only to `127.0.0.1`, uses `data/local-arbitrage.sqlite`, and
 prints a first-run setup token. Open the displayed URL, enter that token, and
-choose your own Hunta and Jay passwords. Existing accounts are preserved when
+choose your Hunta password. Jay can create his own login later using the private
+setup token. Existing accounts are preserved when
 the launcher is restarted. Use `-Port 8001` if the default port is occupied.
 The setup token is a secret; do not paste it into chat or commit it. This script
 does not configure hosting, live odds credentials, or background scheduling.

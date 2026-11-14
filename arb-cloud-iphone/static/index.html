@@ -148,12 +148,19 @@ html{scroll-padding-top:80px}
    <label for="loginUsername">Account</label><select id="loginUsername"><option value="hunta">Hunta</option><option value="jay">Jay</option></select>
    <label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" required>
    <button type="submit">Sign in</button>
+   <button id="jaySetupButton" class="secondary hidden" type="button" onclick="showJaySetupForm()">Set up Jay login</button>
   </form>
   <form id="setupForm" class="auth-form hidden">
    <label for="setupToken">One-time setup token</label><input id="setupToken" type="password" autocomplete="off" required>
    <label for="setupHuntaPassword">Hunta password (12 characters minimum)</label><input id="setupHuntaPassword" type="password" autocomplete="new-password" minlength="12" required>
-   <label for="setupJayPassword">Jay password (12 characters minimum)</label><input id="setupJayPassword" type="password" autocomplete="new-password" minlength="12" required>
-   <button type="submit">Create both accounts</button>
+   <p class="muted">Jay can set up his own login later. No Jay password is needed now.</p>
+   <button type="submit">Create Hunta login</button>
+  </form>
+  <form id="jaySetupForm" class="auth-form hidden">
+   <label for="jaySetupToken">Private setup token</label><input id="jaySetupToken" type="password" autocomplete="off" required>
+   <label for="jayNewPassword">Jay password (12 characters minimum)</label><input id="jayNewPassword" type="password" autocomplete="new-password" minlength="12" maxlength="256" required>
+   <button type="submit">Create Jay login</button>
+   <button class="secondary" type="button" onclick="showAuthGate(false)">Back to sign in</button>
   </form>
   <p id="authMessage" class="warn hidden" role="status" aria-live="polite"></p>
  </div>
@@ -267,7 +274,7 @@ html{scroll-padding-top:80px}
  </div>
 </dialog>
 <script>
-let legCount=2, lastOpportunity=null, lastCandidate=null, currentUser=null, accountsCache=[], positionsCache=[], selectedLegAccounts=[], refreshTimer=null, liveCandidateRows=[];
+let legCount=2, lastOpportunity=null, lastCandidate=null, currentUser=null, accountsCache=[], positionsCache=[], selectedLegAccounts=[], refreshTimer=null, liveCandidateRows=[], jaySetupAvailable=false;
 function addLeg(){if(legCount>=3)return;legCount++;renderLegs()}
 function renderLegs(){
  const el=document.getElementById('legs');const saved={};el.querySelectorAll('input').forEach(x=>saved[x.id]=x.value);el.innerHTML='';
@@ -399,8 +406,18 @@ function showAuthGate(setup){
  document.getElementById('authControls').classList.add('hidden');
  document.getElementById('loginForm').classList.toggle('hidden',!!setup);
  document.getElementById('setupForm').classList.toggle('hidden',!setup);
- document.getElementById('authTitle').textContent=setup?'Set up Hunta and Jay accounts':'Sign in';
- document.getElementById('authIntro').textContent=setup?'Enter the one-time setup token from the server environment, then set both passwords.':'Use your Hunta or Jay account to access the dashboard.';
+ document.getElementById('jaySetupForm').classList.add('hidden');
+ document.getElementById('jaySetupButton').classList.toggle('hidden',!jaySetupAvailable);
+ document.getElementById('authTitle').textContent=setup?'Set up Hunta login':'Sign in';
+ document.getElementById('authIntro').textContent=setup?'Enter the private setup token from Render and choose your Hunta password.':'Use your Hunta or Jay account to access the dashboard.';
+}
+function showJaySetupForm(){
+ document.getElementById('loginForm').classList.add('hidden');
+ document.getElementById('setupForm').classList.add('hidden');
+ document.getElementById('jaySetupForm').classList.remove('hidden');
+ document.getElementById('authMessage').classList.add('hidden');
+ document.getElementById('authTitle').textContent='Set up Jay login';
+ document.getElementById('authIntro').textContent='Use the private setup token shared by Hunta, then choose your own password. This cannot reset an existing login.';
 }
 function showAuthenticated(){
  document.getElementById('dashboardContent').inert=false;
@@ -421,9 +438,17 @@ document.getElementById('loginForm').addEventListener('submit',async function(e)
 document.getElementById('setupForm').addEventListener('submit',async function(e){
  e.preventDefault();const message=document.getElementById('authMessage');message.classList.add('hidden');
  try{
-  await api('/auth/setup',{method:'POST',body:JSON.stringify({setup_token:document.getElementById('setupToken').value,hunta_password:document.getElementById('setupHuntaPassword').value,jay_password:document.getElementById('setupJayPassword').value})});
-  document.getElementById('setupToken').value='';document.getElementById('setupHuntaPassword').value='';document.getElementById('setupJayPassword').value='';
-  showAuthGate(false);authError('Accounts created. Sign in with either account.');
+  await api('/auth/setup',{method:'POST',body:JSON.stringify({setup_token:document.getElementById('setupToken').value,hunta_password:document.getElementById('setupHuntaPassword').value})});
+  document.getElementById('setupToken').value='';document.getElementById('setupHuntaPassword').value='';
+  jaySetupAvailable=true;showAuthGate(false);authError('Hunta login created. Sign in with your password. Jay can join later.');
+ }catch(err){authError(err.message)}
+});
+document.getElementById('jaySetupForm').addEventListener('submit',async function(e){
+ e.preventDefault();
+ try{
+  await api('/auth/setup/jay',{method:'POST',body:JSON.stringify({setup_token:document.getElementById('jaySetupToken').value,jay_password:document.getElementById('jayNewPassword').value})});
+  document.getElementById('jaySetupToken').value='';document.getElementById('jayNewPassword').value='';
+  jaySetupAvailable=false;showAuthGate(false);document.getElementById('loginUsername').value='jay';authError('Jay login created. Sign in with your password.');
  }catch(err){authError(err.message)}
 });
 async function logout(){
@@ -434,6 +459,7 @@ async function initialize(){
  renderLegs();
  try{
   const s=await api('/auth/status');
+  jaySetupAvailable=!!s.jay_setup_required;
   if(s.setup_required){showAuthGate(true);return}
   if(!s.authenticated){showAuthGate(false);return}
   authGeneration++;currentUser=s.user;showAuthenticated();await startDashboard();

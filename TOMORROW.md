@@ -4,6 +4,12 @@
 
 Public paid/customer development is paused at the owner's request. The next
 work is the private dashboard, Render hosting and The Odds API connection.
+The owner requested Hunta-only first-run setup. The current setup screen creates
+only Hunta's login. Jay can later use **Set up Jay login** and the private setup
+token to create his own password; setup cannot overwrite existing or disabled
+accounts. Legacy API clients can still supply both passwords for initial setup.
+The staged-onboarding follow-up passed 193 tests and Chromium checks covering
+Hunta-only signup, dashboard access and Jay's later signup/sign-in.
 The dashboard follow-up adds section navigation, responsive account cards,
 owner filtering, refresh timestamps and stale-data warnings, optional-service
 failure messages, odds configuration status and single-flight odds controls.
