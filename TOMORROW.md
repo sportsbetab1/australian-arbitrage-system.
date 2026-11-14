@@ -12,6 +12,11 @@ views. No reference-image profit, live timer or bookmaker-connection claims are
 hardcoded. `static/dashboard.css` is the single stylesheet; the mobile manifest
 uses its navy palette. `tests/dashboard_browser_check.py` verifies the interface
 with disposable data and writes ignored screenshots.
+Sidebar icons and labels now have proper page URLs (`/dashboard`, `/positions`,
+`/settlements`, `/accounts`, `/scanner`, `/analytics`, `/settings`, `/notifications`).
+The server serves the sign-in-protected app shell at each page, with no-store
+headers; private APIs remain authenticated. Navigation supports reloads,
+Back/Forward and native modified-link clicks.
 The owner requested Hunta-only first-run setup. The current setup screen creates
 only Hunta's login. Jay can later use **Set up Jay login** and the private setup
 token to create his own password; setup cannot overwrite existing or disabled

@@ -55,6 +55,18 @@ class AuthenticationBoundaryTests(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.headers.get("cache-control"), "no-store, private")
 
+    def test_each_navigation_page_can_be_opened_directly(self):
+        for path in ("/dashboard", "/positions", "/settlements", "/accounts",
+                     "/scanner", "/analytics", "/settings", "/notifications"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('id="authGate"', response.text)
+                self.assertEqual(response.headers.get("cache-control"), "no-store, private")
+
+    def test_unknown_page_still_returns_not_found(self):
+        self.assertEqual(self.client.get("/not-a-dashboard-page").status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

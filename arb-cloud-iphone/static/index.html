@@ -26,8 +26,8 @@
 
 <div id="dashboardContent" class="app-shell" inert>
 <aside class="sidebar" aria-label="Main navigation">
- <a class="brand" href="#overview" data-page="overview"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 60 60"><defs><linearGradient id="brandGradient" x2="1" y2="1"><stop stop-color="#30ffe3"/><stop offset="1" stop-color="#7761ff"/></linearGradient></defs><path d="M30 3 56 51H42L30 28 17 51H3Z" fill="url(#brandGradient)"/><path d="m30 3 7 14-20 34H3Z" fill="#23d9e7"/><path d="m30 32 10 19H20Z" fill="#91a9ff"/></svg></span><span>AUSTRALIAN<br>ARBITRAGE<br>CONTROL</span></a>
- <nav class="primary-nav"><a href="#overview" data-page="overview" class="nav-link nav-overview"><svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg><span>Dashboard</span></a><a href="#positions" data-page="positions" class="nav-link nav-positions"><svg class="icon" aria-hidden="true"><use href="#i-positions"></use></svg><span>Positions</span></a><a href="#settlements" data-page="settlements" class="nav-link nav-settlements"><svg class="icon" aria-hidden="true"><use href="#i-settlements"></use></svg><span>Settlements</span></a><a href="#accounts" data-page="accounts" class="nav-link nav-accounts"><svg class="icon" aria-hidden="true"><use href="#i-accounts"></use></svg><span>Accounts</span></a><a href="#scanner" data-page="scanner" class="nav-link nav-scanner"><svg class="icon" aria-hidden="true"><use href="#i-scan"></use></svg><span>Scanner</span></a><a href="#analytics" data-page="analytics" class="nav-link nav-analytics"><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg><span>Analytics</span></a><a href="#settings" data-page="settings" class="nav-link nav-settings"><svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg><span>Settings</span></a><a href="#notifications" data-page="notifications" class="nav-link nav-notifications"><svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg><span>Notifications</span><span id="notificationBadge" class="nav-badge hidden"></span></a><button class="nav-link mobile-more" type="button" data-page="settings"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg><span>More</span></button><button class="nav-link nav-logout" type="button" onclick="logout()"><svg class="icon" aria-hidden="true"><use href="#i-logout"></use></svg><span>Logout</span></button></nav>
+ <a class="brand" href="/dashboard" data-page="overview"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 60 60"><defs><linearGradient id="brandGradient" x2="1" y2="1"><stop stop-color="#30ffe3"/><stop offset="1" stop-color="#7761ff"/></linearGradient></defs><path d="M30 3 56 51H42L30 28 17 51H3Z" fill="url(#brandGradient)"/><path d="m30 3 7 14-20 34H3Z" fill="#23d9e7"/><path d="m30 32 10 19H20Z" fill="#91a9ff"/></svg></span><span>AUSTRALIAN<br>ARBITRAGE<br>CONTROL</span></a>
+ <nav class="primary-nav"><a href="/dashboard" data-page="overview" class="nav-link nav-overview"><svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg><span>Dashboard</span></a><a href="/positions" data-page="positions" class="nav-link nav-positions"><svg class="icon" aria-hidden="true"><use href="#i-positions"></use></svg><span>Positions</span></a><a href="/settlements" data-page="settlements" class="nav-link nav-settlements"><svg class="icon" aria-hidden="true"><use href="#i-settlements"></use></svg><span>Settlements</span></a><a href="/accounts" data-page="accounts" class="nav-link nav-accounts"><svg class="icon" aria-hidden="true"><use href="#i-accounts"></use></svg><span>Accounts</span></a><a href="/scanner" data-page="scanner" class="nav-link nav-scanner"><svg class="icon" aria-hidden="true"><use href="#i-scan"></use></svg><span>Scanner</span></a><a href="/analytics" data-page="analytics" class="nav-link nav-analytics"><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg><span>Analytics</span></a><a href="/settings" data-page="settings" class="nav-link nav-settings"><svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg><span>Settings</span></a><a href="/notifications" data-page="notifications" class="nav-link nav-notifications"><svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg><span>Notifications</span><span id="notificationBadge" class="nav-badge hidden"></span></a><button class="nav-link mobile-more" type="button" data-page="settings"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg><span>More</span></button><button class="nav-link nav-logout" type="button" onclick="logout()"><svg class="icon" aria-hidden="true"><use href="#i-logout"></use></svg><span>Logout</span></button></nav>
  <div class="sidebar-bottom"><div class="online-label"><span class="status-dot"></span><span id="sidebarStatus">Connecting</span></div><small>Private operator workspace</small><small id="localDate"></small></div>
 </aside>
 <div class="workspace">
@@ -117,7 +117,11 @@
 </dialog>
 <script>
 const pageTitles={overview:['Dashboard','Australian Arbitrage Control'],positions:['Positions','Manage your open exposure'],settlements:['Settlements','Your recorded returns'],accounts:['Accounts','Your bookmaker ledger'],scanner:['Scanner','Find and review opportunities'],analytics:['Analytics','Understand your performance'],notifications:['Notifications','Your latest account activity'],settings:['Settings','Your private workspace']};
-function showPage(page,updateHash=true){
+const pagePaths={overview:'/dashboard',positions:'/positions',settlements:'/settlements',accounts:'/accounts',scanner:'/scanner',analytics:'/analytics',notifications:'/notifications',settings:'/settings'};
+function pageFromLocation(){
+ return Object.keys(pagePaths).find(page=>pagePaths[page]===location.pathname)||(location.pathname==='/'?location.hash.slice(1):'overview');
+}
+function showPage(page,updateUrl=true){
  if(!Object.hasOwn(pageTitles,page))page='overview';
  document.querySelectorAll('[data-view]').forEach(el=>el.classList.toggle('hidden',el.dataset.view!==page));
  document.querySelectorAll('[data-page]').forEach(el=>{if(el.dataset.page===page)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current')});
@@ -125,11 +129,16 @@ function showPage(page,updateHash=true){
  if(['settings','analytics','settlements','notifications'].includes(page))more.setAttribute('aria-current','page');
  document.getElementById('screenTitle').textContent=pageTitles[page][0];
  document.getElementById('screenSubtitle').textContent=pageTitles[page][1];
- if(updateHash){history.replaceState(null,'','#'+page);window.scrollTo({top:0,behavior:'instant'})}
+ if(updateUrl){if(location.pathname+location.hash!==pagePaths[page])history.pushState(null,'',pagePaths[page]);window.scrollTo({top:0,behavior:'instant'})}
 }
-document.addEventListener('click',function(event){const link=event.target.closest('[data-page]');if(link){event.preventDefault();showPage(link.dataset.page)}});
-window.addEventListener('hashchange',()=>showPage(location.hash.slice(1),false));
-showPage(location.hash.slice(1),false);
+document.addEventListener('click',function(event){
+ if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+ const link=event.target.closest('[data-page]');
+ if(link){event.preventDefault();showPage(link.dataset.page)}
+});
+window.addEventListener('popstate',()=>showPage(pageFromLocation(),false));
+window.addEventListener('hashchange',()=>showPage(pageFromLocation(),false));
+showPage(pageFromLocation(),false);
 document.getElementById('localDate').textContent=new Date().toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
 function emptyState(title,detail=''){return '<div class="empty-state"><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg><strong>'+escapeHtml(title)+'</strong><span>'+escapeHtml(detail)+'</span></div>'}
 function setConnection(healthy,label){

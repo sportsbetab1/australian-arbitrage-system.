@@ -197,6 +197,11 @@ AUTH_PUBLIC_PATHS = {
     "/api/auth/login",
 }
 
+DASHBOARD_PAGE_PATHS = {
+    "/", "/dashboard", "/positions", "/settlements", "/accounts",
+    "/scanner", "/analytics", "/settings", "/notifications",
+}
+
 
 @app.middleware("http")
 async def require_authenticated_api(request: Request, call_next):
@@ -270,7 +275,7 @@ async def prevent_api_caching(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
-    if request.url.path.startswith("/api/") or request.url.path == "/":
+    if request.url.path.startswith("/api/") or request.url.path in DASHBOARD_PAGE_PATHS:
         # Financial and authenticated UI responses must not be stored by shared
         # proxies or browser caches after logout or account switching.
         response.headers["Cache-Control"] = "no-store, private"
@@ -924,6 +929,14 @@ def startup():
 
 
 @app.get("/")
+@app.get("/dashboard", include_in_schema=False)
+@app.get("/positions", include_in_schema=False)
+@app.get("/settlements", include_in_schema=False)
+@app.get("/accounts", include_in_schema=False)
+@app.get("/scanner", include_in_schema=False)
+@app.get("/analytics", include_in_schema=False)
+@app.get("/settings", include_in_schema=False)
+@app.get("/notifications", include_in_schema=False)
 def home():
     return FileResponse("static/index.html")
 

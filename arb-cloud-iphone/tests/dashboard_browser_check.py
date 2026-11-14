@@ -65,6 +65,24 @@ def run():
                 expect(page.locator('#lastUpdated')).to_contain_text('Last dashboard update:')
                 expect(page.locator('#bookmakerAccountCount')).to_have_text('14')
                 expect(page.locator('#performanceChart')).to_contain_text('Your performance starts here')
+                # Click the SVG icons themselves: routes must survive reloads.
+                for view in ['positions', 'settlements', 'accounts', 'scanner', 'analytics', 'settings', 'notifications', 'overview']:
+                    path = '/dashboard' if view == 'overview' else '/' + view
+                    page.locator(f'.nav-{view} .icon').click()
+                    expect(page).to_have_url(origin + path)
+                    expect(page.locator(f'[data-view={view}]')).to_be_visible()
+                    page.reload()
+                    expect(page.locator('#lastUpdated')).to_contain_text('Last dashboard update:')
+                    expect(page.locator(f'[data-view={view}]')).to_be_visible()
+                page.locator('.nav-scanner .icon').click()
+                page.locator('.nav-accounts .icon').click()
+                page.go_back()
+                expect(page).to_have_url(origin + '/scanner')
+                expect(page.locator('[data-view=scanner]')).to_be_visible()
+                page.go_forward()
+                expect(page).to_have_url(origin + '/accounts')
+                expect(page.locator('[data-view=accounts]')).to_be_visible()
+                page.locator('.nav-overview .icon').click()
                 page.screenshot(path=str(artifacts / 'dashboard-empty-desktop.png'), full_page=True)
 
                 # Fixture-only records provide an independently calculated chart

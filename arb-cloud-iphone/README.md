@@ -32,6 +32,9 @@ iPhone. The front page shows capital, exposure limits, reserve, account inventor
 settled P/L, buffer availability, profit allocations, open positions and recent
 notifications. Accounts, Scanner, Positions, Settlements, Analytics, Notifications
 and Settings have separate views; on phones the extra views are under **More**.
+Each sidebar icon and label opens its own URL (for example `/positions` or
+`/accounts`). Direct links, reloads and browser Back/Forward retain the selected
+page. Financial APIs still require sign-in on every route.
 
 The portfolio chart uses the report's actual monthly settled P/L, accumulated
 chronologically. It shows an empty state before the first settlement. The scanner
