@@ -1466,6 +1466,16 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
             commission_by_account,
         )
 
+        # Ordinary new positions must meet the configured worst-case net ROI floor.
+        # Emergency unmatched recording remains available to document an already
+        # accepted real-world leg, even when its current hedge is unprofitable.
+        if not allow_unmatched and result["roi"] + 1e-12 < MIN_NET_ROI:
+            raise HTTPException(
+                409,
+                "Worst-case net ROI is below the 1.5% minimum. "
+                "Do not record this as a new qualified position.",
+            )
+
         check_new_position_allowed(con, result["total_stake"])
 
         position_id = con.execute("""
