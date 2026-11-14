@@ -30,7 +30,7 @@ from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
 from scripts.backup_db import create_backup
 from app.odds import OddsProviderError, build_h2h_candidates, fetch_json
-from app.global_scanner import supported_sports, REGIONS
+from app.global_scanner import supported_sports, REGIONS, SCAN_CONFIG, reserve_scan, reconcile_scan, eligible_bookmakers
 from app.customer_api import router as customer_router
 
 # ============================================================
@@ -1272,6 +1272,97 @@ def global_odds_catalog():
         "bookmaker_regions": list(REGIONS),
         "coverage_note": "Competition keys are global; bookmaker regions do not represent event countries.",
         "quota": usage,
+    }
+
+
+@app.get("/api/odds/global/config")
+def global_scan_config():
+    return {
+        **SCAN_CONFIG,
+        "regions": list(SCAN_CONFIG["regions"]),
+        "automated_weekly_limit": 1_500_000,
+        "protected_weekly_reserve": 500_000,
+        "billing_week_note": "UTC Monday default; verify against provider billing reset.",
+    }
+
+
+@app.post("/api/odds/global/scan/{sport_key}")
+def scan_global_competition(sport_key: str):
+    """Manually triggered, quota-gated global scan. No automatic scheduler yet."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", sport_key):
+        raise HTTPException(400, "Invalid competition key.")
+    timestamp = now()
+    with closing(db()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        reservation_id, blocked = reserve_scan(con, sport_key, timestamp)
+        con.commit()
+    if blocked:
+        raise HTTPException(429, f"Global scan blocked: {blocked}")
+    try:
+        events, usage = fetch_json(
+            os.getenv("ODDS_API_KEY", ""),
+            f"sports/{sport_key}/odds",
+            {
+                "regions": ",".join(SCAN_CONFIG["regions"]),
+                "markets": "h2h",
+                "oddsFormat": "decimal",
+                "dateFormat": "iso",
+            },
+            base_url=os.getenv("ODDS_API_BASE", "https://api.the-odds-api.com/v4"),
+        )
+        if not isinstance(events, list):
+            raise OddsProviderError("The odds provider returned an invalid event list.")
+    except OddsProviderError as error:
+        with closing(db()) as con, con:
+            reconcile_scan(con, reservation_id, None, "provider_error")
+            con.commit()
+        raise HTTPException(error.status_code, str(error)) from None
+    with closing(db()) as con, con:
+        reconcile_scan(con, reservation_id, usage.get("request_cost"), "completed")
+        con.commit()
+    from datetime import datetime
+    deadline = timestamp + timedelta(hours=SCAN_CONFIG["event_window_hours"])
+    relevant = []
+    for event in events:
+        try:
+            start = datetime.fromisoformat(str(event["commence_time"]).replace("Z", "+00:00"))
+        except (ValueError, TypeError, KeyError):
+            continue
+        if start.tzinfo is not None and timestamp < start <= deadline:
+            relevant.append(event)
+    # Only configured bookmakers are eligible; the output is indicative and
+    # does not assert account-specific market access or liquidity.
+    filtered = eligible_bookmakers(relevant, BOOKMAKERS)
+    results = []
+    for raw in build_h2h_candidates(filtered, now=timestamp):
+        if len(raw["outcomes"]) != 2:
+            continue  # Never treat 3-way soccer as a binary market.
+        candidate = Candidate(
+            sport=raw["sport"], event=raw["event"], market=raw["market"],
+            outcomes=raw["outcomes"], total_stake=500.0,
+        )
+        calculation = calculate(candidate)
+        if calculation["net_roi"] < SCAN_CONFIG["minimum_net_roi_percent"] / 100:
+            continue
+        if min(calculation["stakes"]) <= 0:
+            continue
+        results.append({
+            "candidate": candidate.model_dump(),
+            "provider_event_id": raw["event_id"],
+            "commence_time": raw["commence_time"],
+            "source_updated_at": raw["source_updated_at"],
+            "net_roi": calculation["net_roi"],
+            "warning": "Indicative only; verify both account owners, rules, prices, liquidity and commission.",
+        })
+    results.sort(key=lambda item: item["net_roi"], reverse=True)
+    return {
+        "sport_key": sport_key,
+        "events_received": len(events),
+        "events_in_window": len(relevant),
+        "qualified_count": len(results),
+        "candidates": results,
+        "quota": usage,
+        "reservation_id": reservation_id,
     }
 
 
