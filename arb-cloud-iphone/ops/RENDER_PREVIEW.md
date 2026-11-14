@@ -19,9 +19,13 @@ use the private token to create his own password. Existing logins cannot be
 overwritten through setup. Never send the token, passwords or odds key through chat.
 
 Live checks verified health, sign-in protection and correct HTTPS Origin
-handling. The owner saved `ODDS_API_KEY` privately and it was deployed. Operator
-setup/sign-in and a real odds-provider call still need to be completed; follow
-the provider verification steps below. Each redeploy can erase preview records.
+handling. The corrected `ODDS_API_KEY` passed a private provider check on
+2026-11-14: sports returned HTTP 200 with 71 active non-outright sports, and one
+Australian NBA odds request returned HTTP 200 with 5 events. That request cost
+1 provider credit, with 499 remaining at the time. Operator setup/sign-in and
+an in-app scan still need to be completed by the owner. These provider results
+do not mean bookmaker accounts or balances are connected. Follow the in-app
+verification steps below. Each redeploy can erase preview records.
 
 Public paid/customer development is paused. This deployment is for Hunta and
 Jay to preview the operator dashboard behind its existing sign-in.

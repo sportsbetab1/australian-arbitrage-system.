@@ -44,11 +44,16 @@ preview mode and places the database and snapshots under `/tmp/arbitrage-preview
 Live-host checks passed HTTPS health, authenticated API protection, no-store
 headers, rejection of cross-origin POSTs and acceptance of HTTPS same-origin
 requests up to private setup-token validation. No accounts were created by
-these checks. The owner saved a non-empty `ODDS_API_KEY` under the correct name
-in Render and the preview was redeployed with it. Owner password setup,
-authenticated host workflow and a real odds-provider request are still pending.
+these checks. The owner corrected `ODDS_API_KEY` in Render after a credential
+mix-up. A private provider check on 2026-11-14 returned HTTP 200 for sports and
+Australian NBA head-to-head odds: 71 active non-outright sports and 5 events.
+The single odds request cost 1 credit, leaving 499 at that time. This verifies
+provider acceptance, not an authenticated user workflow through the Render app.
+Owner setup/sign-in and an in-app scan remain to be completed by the owner.
 The redesigned HTML, stylesheet, mobile setup screen and manifest were checked
-on the actual HTTPS host. Local smoke tests do not verify provider acceptance.
+on the actual HTTPS host. Bookmaker account integrations remain unimplemented;
+the ledger balances are manually recorded. Official provider access is needed
+before building a connector. Keep all credential values out of project files.
 
 Local checks passed: the 187-test regression suite, a separate new config
 privacy test, the localhost fictional settlement/backup smoke, service-worker
