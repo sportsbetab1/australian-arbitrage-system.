@@ -5,7 +5,8 @@
 The owner approved the temporary-storage limitation and a Free web service
 was created in Singapore. It is live at
 https://arbitrage-private-preview.onrender.com with automatic deploys disabled.
-It uses application commit `746ce5c` from `codex/private-dashboard-hosting`.
+It uses application commit `b3b2a4e` from `codex/private-dashboard-hosting`,
+including the owner's reference-based dashboard and Hunta-first login setup.
 The service's environment settings are at
 https://dashboard.render.com/web/srv-dbruqqgn74is738ccc80/env .
 
@@ -18,9 +19,9 @@ use the private token to create his own password. Existing logins cannot be
 overwritten through setup. Never send the token, passwords or odds key through chat.
 
 Live checks verified health, sign-in protection and correct HTTPS Origin
-handling. Operator setup/sign-in and a real odds-provider call still need to
-be completed. Enter `ODDS_API_KEY` privately, redeploy, and follow the provider
-verification steps below. Each redeploy can erase preview records.
+handling. The owner saved `ODDS_API_KEY` privately and it was deployed. Operator
+setup/sign-in and a real odds-provider call still need to be completed; follow
+the provider verification steps below. Each redeploy can erase preview records.
 
 Public paid/customer development is paused. This deployment is for Hunta and
 Jay to preview the operator dashboard behind its existing sign-in.

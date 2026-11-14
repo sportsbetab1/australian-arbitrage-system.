@@ -30,7 +30,8 @@ financial deployment. The paid disk blueprint is unchanged. See
 The owner approved a temporary free preview and connected Render. The service
 is live at `https://arbitrage-private-preview.onrender.com` in Singapore on
 the Free plan with no disk and automatic deployment disabled. It deploys this
-branch's application commit `746ce5c`; the dashboard PR's CI passed. Render's
+branch's application commit `b3b2a4e`; prior CI passed and the overhaul's frontend
+CI passed, with the full Linux/Windows workflow still running at deployment. Render's
 default Python failed dependency installation, so the host now pins 3.11.11.
 `AUTH_SETUP_TOKEN` was generated privately by Render. The start command enables
 preview mode and places the database and snapshots under `/tmp/arbitrage-preview`.
@@ -38,9 +39,11 @@ preview mode and places the database and snapshots under `/tmp/arbitrage-preview
 Live-host checks passed HTTPS health, authenticated API protection, no-store
 headers, rejection of cross-origin POSTs and acceptance of HTTPS same-origin
 requests up to private setup-token validation. No accounts were created by
-these checks. Owner password setup, authenticated host workflow and the real
-odds-provider request are still pending; the odds key must be entered through
-Render's environment page. Local smoke tests do not verify those remaining steps.
+these checks. The owner saved a non-empty `ODDS_API_KEY` under the correct name
+in Render and the preview was redeployed with it. Owner password setup,
+authenticated host workflow and a real odds-provider request are still pending.
+The redesigned HTML, stylesheet, mobile setup screen and manifest were checked
+on the actual HTTPS host. Local smoke tests do not verify provider acceptance.
 
 Local checks passed: the 187-test regression suite, a separate new config
 privacy test, the localhost fictional settlement/backup smoke, service-worker
