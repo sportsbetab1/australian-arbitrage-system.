@@ -20,7 +20,8 @@ host access controls and separately retained backups remain necessary.
 Preflight now checks required application tables and columns in the latest
 snapshot, as well as SQLite integrity and foreign keys. A recent unrelated
 SQLite file cannot satisfy the backup check. The active user check requires
-the expected Hunta and Jay identities, not just an arbitrary count of two users.
+Hunta and allows Jay to complete setup later; unexpected active identities still
+fail. A pending/inactive Jay login is reported as a warning.
 
 ## Host preflight and acceptance
 

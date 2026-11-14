@@ -193,7 +193,13 @@ AUTH_PUBLIC_PATHS = {
     "/api/health",
     "/api/auth/status",
     "/api/auth/setup",
+    "/api/auth/setup/jay",
     "/api/auth/login",
+}
+
+DASHBOARD_PAGE_PATHS = {
+    "/", "/dashboard", "/positions", "/settlements", "/accounts",
+    "/scanner", "/analytics", "/settings", "/notifications", "/buffer",
 }
 
 
@@ -225,7 +231,7 @@ async def require_authenticated_api(request: Request, call_next):
                 status_code=403,
             )
 
-    if path in {"/api/auth/login", "/api/auth/setup", "/api/customer/login"} and request.method == "POST":
+    if path in {"/api/auth/login", "/api/auth/setup", "/api/auth/setup/jay", "/api/customer/login"} and request.method == "POST":
         retry = await run_in_threadpool(rate_limits.consume, "auth-global", "all", 60)
         if not retry:
             identity = request.client.host if request.client else "unknown"
@@ -269,7 +275,7 @@ async def prevent_api_caching(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
-    if request.url.path.startswith("/api/") or request.url.path == "/":
+    if request.url.path.startswith("/api/") or request.url.path in DASHBOARD_PAGE_PATHS:
         # Financial and authenticated UI responses must not be stored by shared
         # proxies or browser caches after logout or account switching.
         response.headers["Cache-Control"] = "no-store, private"
@@ -421,6 +427,11 @@ class AccountReconciliation(StrictModel):
 class AuthSetup(StrictModel):
     setup_token: str = Field(min_length=1)
     hunta_password: str = Field(min_length=12, max_length=256)
+    jay_password: str | None = Field(default=None, min_length=12, max_length=256)
+
+
+class JaySetup(StrictModel):
+    setup_token: str = Field(min_length=1)
     jay_password: str = Field(min_length=12, max_length=256)
 
 
@@ -470,10 +481,9 @@ def get_authenticated_user(token):
 def auth_setup_required():
     con = db()
     try:
-        count = con.execute(
-            "SELECT COUNT(*) AS total FROM auth_users"
-        ).fetchone()["total"]
-        return count < 2
+        return con.execute(
+            "SELECT 1 FROM auth_users WHERE username = 'hunta'"
+        ).fetchone() is None
     finally:
         con.close()
 
@@ -482,9 +492,12 @@ def auth_setup_required():
 def auth_status(request: Request):
     token = request.cookies.get(AUTH_COOKIE_NAME)
     user = get_authenticated_user(token) if token else None
+    with closing(db()) as con:
+        jay_exists = con.execute("SELECT 1 FROM auth_users WHERE username = 'jay'").fetchone() is not None
     return {
         "authenticated": user is not None,
         "setup_required": auth_setup_required(),
+        "jay_setup_required": not jay_exists,
         "user": user,
     }
 
@@ -511,11 +524,13 @@ def setup_authentication(req: AuthSetup):
 
         con.execute("""
             INSERT INTO auth_users(username, display_name, password_hash)
-            VALUES (?, ?, ?), (?, ?, ?)
+            VALUES (?, ?, ?)
         """, (
             "hunta", "Hunta", password_hasher.hash(req.hunta_password),
-            "jay", "Jay", password_hasher.hash(req.jay_password),
         ))
+        if req.jay_password is not None:
+            con.execute("INSERT INTO auth_users(username, display_name, password_hash) VALUES (?, ?, ?)",
+                        ("jay", "Jay", password_hasher.hash(req.jay_password)))
         con.commit()
     except Exception:
         con.rollback()
@@ -523,7 +538,26 @@ def setup_authentication(req: AuthSetup):
     finally:
         con.close()
 
-    return {"ok": True, "message": "Hunta and Jay accounts are ready. Please sign in."}
+    return {"ok": True, "message": "Accounts are ready. Please sign in."}
+
+
+@app.post("/api/auth/setup/jay")
+def setup_jay(req: JaySetup):
+    expected_token = os.getenv("AUTH_SETUP_TOKEN", "")
+    if not expected_token:
+        raise HTTPException(503, "Account setup is disabled until AUTH_SETUP_TOKEN is configured.")
+    if not hmac.compare_digest(req.setup_token.encode("utf-8"), expected_token.encode("utf-8")):
+        raise HTTPException(403, "The setup token is invalid.")
+    password_hash = password_hasher.hash(req.jay_password)
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("SELECT 1 FROM auth_users WHERE username = 'hunta'").fetchone() is None:
+            raise HTTPException(409, "Complete Hunta setup first.")
+        if con.execute("SELECT 1 FROM auth_users WHERE username = 'jay'").fetchone() is not None:
+            raise HTTPException(409, "Jay account setup has already been completed.")
+        con.execute("INSERT INTO auth_users(username, display_name, password_hash) VALUES (?, ?, ?)",
+                    ("jay", "Jay", password_hash))
+    return {"ok": True, "message": "Jay account is ready. Please sign in."}
 
 
 @app.post("/api/auth/login")
@@ -895,6 +929,15 @@ def startup():
 
 
 @app.get("/")
+@app.get("/dashboard", include_in_schema=False)
+@app.get("/positions", include_in_schema=False)
+@app.get("/settlements", include_in_schema=False)
+@app.get("/accounts", include_in_schema=False)
+@app.get("/scanner", include_in_schema=False)
+@app.get("/analytics", include_in_schema=False)
+@app.get("/settings", include_in_schema=False)
+@app.get("/notifications", include_in_schema=False)
+@app.get("/buffer", include_in_schema=False)
 def home():
     return FileResponse("static/index.html")
 
@@ -929,6 +972,13 @@ def config():
         "bookmakers": BOOKMAKERS,
         "bet_placement": "manual only",
         "concurrent_position_limit": MAX_OPEN_POSITIONS,
+        "preview_mode": os.getenv("APP_PREVIEW_MODE", "false").lower() == "true",
+        "odds_feed": {
+            "configured": bool(os.getenv("ODDS_API_KEY", "").strip()),
+            "region": "au",
+            "market": "h2h",
+            "mode": "on-demand",
+        },
     }
 
 
@@ -2018,6 +2068,7 @@ def mark_notification_read(notification_id: int, request: Request):
 
 @app.get("/api/reports/summary")
 def reports_summary():
+    report_now = now()
     with closing(db()) as con, con:
         totals = con.execute("""
             SELECT
@@ -2049,12 +2100,23 @@ def reports_summary():
             ORDER BY month DESC
         """).fetchall()
 
+        daily = con.execute("""
+            SELECT date(settled_at) AS day, COUNT(*) AS positions,
+                   ROUND(COALESCE(SUM(actual_pnl), 0), 2) AS net_pnl
+            FROM positions
+            WHERE status = 'Settled' AND date(settled_at) BETWEEN ? AND ?
+            GROUP BY date(settled_at) ORDER BY day
+        """, ((report_now - timedelta(days=29)).date().isoformat(),
+              report_now.date().isoformat())).fetchall()
+
     return {
         "positions": dict(totals),
         "commission_paid": round(float(commissions), 2),
         "reinvested": round(float(allocations["reinvested"]), 2),
         "withdrawn": round(float(allocations["withdrawn"]), 2),
         "monthly": [dict(row) for row in months],
+        "daily": [dict(row) for row in daily],
+        "as_of": report_now.isoformat(),
     }
 
 

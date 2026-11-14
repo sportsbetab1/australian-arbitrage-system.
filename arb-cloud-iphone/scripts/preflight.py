@@ -65,7 +65,9 @@ def inspect_host(db_path, backup_dir=None, environ=None, timestamp=None):
         except (OSError, sqlite3.Error):
             add("database", "fail", "Database is unreadable, incomplete, or failed integrity checks.")
     if users is not None:
-        add("accounts", "pass" if users == {"hunta", "jay"} else "fail", "Both owner accounts must be active before release.")
+        add("accounts", "pass" if users in ({"hunta"}, {"hunta", "jay"}) else "fail", "Hunta must be active; Jay may complete setup later.")
+        if users == {"hunta"}:
+            add("jay_login", "warn", "Jay login is not active; Hunta-only access is available.")
         if not users:
             token = env.get("AUTH_SETUP_TOKEN", "")
             add("setup_token", "pass" if len(token) >= 32 and not token.startswith("replace-") else "fail",

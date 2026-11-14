@@ -39,6 +39,32 @@ def login(client, username="hunta", password="Hunta-test-passphrase-2026"):
     )
 
 
+def test_recent_performance_uses_utc_settlements_and_30_day_boundary(client, monkeypatch):
+    instant = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(main, "now", lambda: instant)
+    assert login(client).status_code == 200
+    rows = [
+        ("Settled", 10, "2026-11-14T10:00:00+00:00"),
+        ("Settled", 20, "2026-11-13T09:00:00+00:00"),
+        ("Settled", -5, "2026-11-13T10:00:00+00:00"),
+        ("Settled", 15, "2026-11-14T01:00:00+02:00"),
+        ("Settled", 5, "2026-10-16T10:00:00+00:00"),
+        ("Settled", 50, "2026-10-15T10:00:00+00:00"),
+        ("Settled", 100, "2026-11-15T10:00:00+00:00"),
+        ("Open", 99, "2026-11-14T10:00:00+00:00"),
+    ]
+    with database.get_db() as con:
+        con.executemany("INSERT INTO positions(event,sport,market,status,actual_pnl,settled_at) VALUES ('Fictional','Tennis','Winner',?,?,?)", rows)
+    report = client.get("/api/reports/summary").json()
+    assert report["as_of"] == instant.isoformat()
+    assert report["daily"] == [
+        {"day": "2026-10-16", "positions": 1, "net_pnl": 5.0},
+        {"day": "2026-11-13", "positions": 3, "net_pnl": 30.0},
+        {"day": "2026-11-14", "positions": 1, "net_pnl": 10.0},
+    ]
+    assert report["positions"]["net_realised_pnl"] == 195
+
+
 def test_authentication_protects_api_and_login_creates_session(client):
     assert client.get("/api/accounts").status_code == 401
     assert client.get("/api/push/delivery-status").status_code == 401
@@ -47,6 +73,21 @@ def test_authentication_protects_api_and_login_creates_session(client):
     assert response.status_code == 200
     assert response.cookies.get(main.AUTH_COOKIE_NAME)
     assert client.get("/api/accounts").status_code == 200
+
+
+def test_config_reports_odds_presence_without_disclosing_key(client, monkeypatch):
+    assert client.get("/api/config").status_code == 401
+    login(client)
+    monkeypatch.setenv("ODDS_API_KEY", "private-test-key-never-returned")
+    monkeypatch.setenv("APP_PREVIEW_MODE", "true")
+    response = client.get("/api/config")
+    assert response.json()["odds_feed"] == {
+        "configured": True, "region": "au", "market": "h2h", "mode": "on-demand",
+    }
+    assert response.json()["preview_mode"] is True
+    assert "private-test-key-never-returned" not in response.text
+    monkeypatch.setenv("ODDS_API_KEY", "   ")
+    assert client.get("/api/config").json()["odds_feed"]["configured"] is False
 
 
 def test_mutating_api_rejects_missing_or_cross_origin_origin(client):

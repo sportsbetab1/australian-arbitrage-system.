@@ -66,6 +66,18 @@ def test_preflight_requires_expected_owners_not_just_two_accounts(tmp_path, monk
     assert any(c["name"] == "accounts" and c["state"] == "fail" for c in inspect_host(path, environ={})["checks"])
 
 
+def test_preflight_allows_hunta_with_jay_pending(tmp_path, monkeypatch):
+    path = tmp_path / "application.sqlite"
+    monkeypatch.setattr(database, "DB_PATH", str(path))
+    main.initialise_system()
+    with closing(database.get_db()) as con, con:
+        con.execute("INSERT INTO auth_users(username, display_name, password_hash) VALUES (?, ?, ?)",
+                    ("hunta", "Hunta", "test-only"))
+    checks = inspect_host(path, environ={})["checks"]
+    assert any(c["name"] == "accounts" and c["state"] == "pass" for c in checks)
+    assert any(c["name"] == "jay_login" and c["state"] == "warn" for c in checks)
+
+
 def test_preflight_reports_nonprivate_existing_database(tmp_path, monkeypatch):
     import pytest
     if os.name != "posix":

@@ -23,7 +23,46 @@ These values describe the backend constants. They are planning controls, not bal
 
 ## Sign-in and assisted vetting
 
-The dashboard supports Hunta and Jay accounts with Argon2 password hashes, HTTP-only sessions, a one-time first-run setup token, a 12-hour session lifetime, and a 15-minute lock after five failed sign-in attempts. Set a long random `AUTH_SETUP_TOKEN` in the hosting environment before first startup. The token is only for initial setup; password recovery is currently an administrator task.
+The dashboard supports Hunta and Jay accounts with Argon2 password hashes, HTTP-only sessions, a private setup token, a 12-hour session lifetime, and a 15-minute lock after five failed sign-in attempts. Set a long random `AUTH_SETUP_TOKEN` in the hosting environment before first startup. First-run setup creates Hunta's login only. Jay can later select **Set up Jay login** on the sign-in screen and use the private token to choose his own password. Jay cannot sign in until he completes setup. The token cannot overwrite either existing login; password recovery remains an administrator task.
+
+### Private dashboard interface
+
+The compact navy dashboard follows the owner's phone reference: horizontal
+Dashboard/Scanner/Positions/Accounts/Buffer/More navigation, four summary cards
+in one row, a portfolio chart, paired buffer/allocation and exposure panels,
+five key metrics and the latest three open positions. Notifications and profile
+are accessible from header icons. Larger status and scanner panels live on their
+respective pages. Bookmaker account connections and public paid work are paused.
+
+The fixed bottom bar opens Scan Markets, starts a draft in the calculator,
+opens assisted confirmation for a selected candidate, or opens positions for
+settlement. These buttons never automatically place, confirm or settle bets.
+Each navigation icon and label has its own URL, including `/buffer`. Extra
+tools are under More. Direct links, reloads and Back/Forward retain the page.
+Financial APIs still require sign-in on every route.
+
+The portfolio chart supports 7-day, 30-day and all-time periods. Recent periods
+use actual settlements grouped by UTC day, including zero-activity dates;
+all-time uses settled months. The return percentage divides the selected
+period's realised P/L by starting bankroll. Key Metrics remain all-time.
+An empty period shows an empty state, not sample profit. The scanner
+runs only on request; the radar animates only while a provider request is pending.
+Account counts represent ledger records, not connected bookmaker accounts. Push
+status describes this device's subscription, not verified delivery. All bets
+remain manual. Navigation and background refresh preserve calculator and hedge
+drafts; API failures display a freshness warning.
+
+For browser verification, with Playwright and Chromium available:
+
+```sh
+python tests/dashboard_browser_check.py --server-python ../.venv/bin/python
+```
+
+This starts a disposable server/database, uses fictional fixture records, checks
+five viewport sizes and writes screenshots under the ignored `artifacts/` folder.
+It also checks the four-card phone row, compact dashboard height, chart periods,
+top navigation, Buffer history and bottom action destinations.
+It makes no live odds-provider or bookmaker calls.
 
 Concurrent sign-in attempts update failure counts under a serialized database
 transaction. Account status and password hash are rechecked after verification
@@ -90,7 +129,8 @@ After creating `.venv` and installing the requirements, run from this directory:
 
 The launcher binds only to `127.0.0.1`, uses `data/local-arbitrage.sqlite`, and
 prints a first-run setup token. Open the displayed URL, enter that token, and
-choose your own Hunta and Jay passwords. Existing accounts are preserved when
+choose your Hunta password. Jay can create his own login later using the private
+setup token. Existing accounts are preserved when
 the launcher is restarted. Use `-Port 8001` if the default port is occupied.
 The setup token is a secret; do not paste it into chat or commit it. This script
 does not configure hosting, live odds credentials, or background scheduling.
