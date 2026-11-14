@@ -1307,6 +1307,48 @@ def global_trial_status():
         return trial_status(con, now())
 
 
+@app.get("/api/odds/global/trial/monitor")
+def global_trial_monitor():
+    """Read-only operator monitoring. Does not start a trial or spend credits."""
+    timestamp = now()
+    with closing(db()) as con:
+        trial_exists = con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='global_scan_trial'"
+        ).fetchone()
+        if not trial_exists:
+            return {"status": "not_started", "started_at": None, "ends_at": None,
+                    "credits_used": 0, "credits_remaining": 350, "credits_limit": 350,
+                    "scan_count": 0, "qualified_count": None, "last_scan_at": None,
+                    "note": "No automatic worker is running. Qualified totals are not persisted yet."}
+        row = con.execute(
+            "SELECT started_at,ends_at,credits_limit FROM global_scan_trial WHERE id=1"
+        ).fetchone()
+        if row is None:
+            return {"status": "not_started", "credits_used": 0, "credits_remaining": 350,
+                    "credits_limit": 350, "scan_count": 0}
+        started_at, ends_at, limit = row
+        ledger_exists = con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='global_scan_ledger'"
+        ).fetchone()
+        if ledger_exists:
+            summary = con.execute(
+                """SELECT COUNT(*), COALESCE(SUM(MAX(reserved_points,COALESCE(actual_points,0))),0),
+                          MAX(requested_at)
+                   FROM global_scan_ledger WHERE requested_at>=? AND requested_at<?""",
+                (started_at, ends_at),
+            ).fetchone()
+            count, used, last_at = summary
+        else:
+            count, used, last_at = 0, 0, None
+        end = datetime.fromisoformat(ends_at)
+        status = "expired" if timestamp >= end else "budget_exhausted" if used >= limit else "active"
+        return {"status": status, "started_at": started_at, "ends_at": ends_at,
+                "credits_used": used, "credits_remaining": max(0, limit-used),
+                "credits_limit": limit, "scan_count": count,
+                "last_scan_at": last_at, "qualified_count": None,
+                "note": "Local SQLite ledger; not durable on free Render. Automatic scanning not enabled."}
+
+
 @app.post("/api/odds/global/scan/{sport_key}")
 def scan_global_competition(sport_key: str):
     """Manually triggered, quota-gated global scan. No automatic scheduler yet."""
