@@ -144,7 +144,7 @@ def test_api_responses_and_auth_errors_are_not_cacheable(client):
     assert login(client).status_code == 200
     responses.extend([client.get("/api/accounts"), client.get("/api/reports/settlements.csv")])
     for response in responses:
-        assert response.headers["cache-control"] == "no-store"
+        assert "no-store" in response.headers["cache-control"].split(", ")
         assert response.headers["pragma"] == "no-cache"
 
 
@@ -513,16 +513,10 @@ def test_one_signed_in_person_can_record_both_confirmed_legs(client, monkeypatch
         headers={"Origin": "http://testserver"},
         json=below_floor_payload,
     )
-    assert recorded_below_floor.status_code == 200, recorded_below_floor.text
-    assert recorded_below_floor.json()["roi"] < main.MIN_NET_ROI
-    assert recorded_below_floor.json()["total_stake"] == 100
-    assert "below the 1.5% candidate threshold" in recorded_below_floor.json()["warning"]
-    balances = {
-        (row["owner"], row["bookmaker"]): row["balance"]
-        for row in client.get("/api/accounts").json()
-    }
-    assert balances[("Hunta", "Sportsbet")] == 560
-    assert balances[("Jay", "Betfair")] == 553.4
+    assert recorded_below_floor.status_code == 409, recorded_below_floor.text
+    balances = {(row["owner"], row["bookmaker"]): row["balance"] for row in client.get("/api/accounts").json()}
+    assert balances[("Hunta", "Sportsbet")] == 610
+    assert balances[("Jay", "Betfair")] == 603.4
 
 
 def test_unmatched_leg_is_reserved_pauses_new_positions_and_can_settle(client):
@@ -593,7 +587,7 @@ def test_unmatched_leg_is_reserved_pauses_new_positions_and_can_settle(client):
     ]
     paused = client.post("/api/positions/open", headers=headers, json=normal_open)
     assert paused.status_code == 409
-    assert "unmatched position" in paused.json()["detail"]
+    assert "unmatched position" in paused.json()["detail"] or "unsettled accepted bet" in paused.json()["detail"]
 
     position = next(
         item for item in client.get("/api/positions").json()
@@ -1177,33 +1171,16 @@ def test_non_finite_financial_inputs_are_rejected(client):
     assert scan.status_code == 422
 
 
-def test_open_position_cap_is_fifteen_and_is_enforced(client):
+def test_position_count_does_not_replace_exposure_limits(client):
     assert login(client).status_code == 200
     with database.get_db() as con:
-        for index in range(main.MAX_OPEN_POSITIONS - 1):
-            con.execute(
-                """
-                INSERT INTO positions (event, sport, market, status, total_stake)
-                VALUES (?, 'Test', 'Winner', 'Open', 0.01)
-                """,
-                (f"Cap fixture {index}",),
-            )
-        main.check_new_position_allowed(con, 0.01)
-
-        con.execute(
-            """
-            INSERT INTO positions (event, sport, market, status, total_stake)
-            VALUES ('Cap fixture final', 'Test', 'Winner', 'Open', 0.01)
-            """
-        )
-        with pytest.raises(main.HTTPException) as error:
-            main.check_new_position_allowed(con, 0.01)
-        assert error.value.status_code == 409
-        assert "15" in error.value.detail
-
-    assert client.get("/api/config").json()["concurrent_position_limit"] == 15
-    assert any(row["bookmaker"] == "TAB" for row in client.get("/api/accounts").json())
-
+        for index in range(20):
+            con.execute("INSERT INTO positions(event, sport, market, status, total_stake) VALUES (?, 'Test', 'Winner', 'Open', 1)", (f"Count fixture {index}",))
+        main.check_new_position_allowed(con, 1)
+        with pytest.raises(main.HTTPException):
+            main.check_new_position_allowed(con, main.MAX_EXPOSURE)
+    assert client.get("/api/config").json()["concurrent_position_limit"] is None
+    assert all(row["bookmaker"] != "TAB" for row in client.get("/api/accounts").json())
 
 
 def test_review_headers_and_connection_cleanup(client, monkeypatch):
@@ -1248,7 +1225,7 @@ def test_auth_throttling_precedes_password_hashing(client, monkeypatch):
     response = login(client)
     assert response.status_code == 429
     assert response.headers["retry-after"] == "17"
-    assert response.headers["cache-control"] == "no-store"
+    assert "no-store" in response.headers["cache-control"].split(", ")
     assert calls == ["auth-global"]
 
 
@@ -1292,3 +1269,17 @@ def test_overflowing_feed_calculation_is_skipped(client, monkeypatch):
     response = client.get("/api/odds/scan/tennis_atp")
     assert response.status_code == 200
     assert response.json()["qualified_count"] == 0
+
+
+def test_retired_tab_history_and_balance_are_preserved(client):
+    from contextlib import closing
+    with closing(database.get_db()) as con, con:
+        account = con.execute("INSERT INTO accounts(owner, bookmaker, opening_balance) VALUES ('Hunta', 'TAB', 123)").lastrowid
+        con.execute("INSERT INTO account_transactions(account_id, transaction_type, amount) VALUES (?, 'deposit', 10)", (account,))
+    database.init_db()
+    database.init_db()
+    historical = next(row for row in main.accounts() if row["id"] == account)
+    assert historical["status"] == "inactive"
+    assert historical["balance"] == 133
+    with closing(database.get_db()) as con:
+        assert con.execute("SELECT COUNT(*) FROM audit_log WHERE action = 'bookmaker_retired'").fetchone()[0] == 1

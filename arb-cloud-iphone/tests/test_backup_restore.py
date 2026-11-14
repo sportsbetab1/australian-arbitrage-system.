@@ -174,7 +174,7 @@ def test_drill_restores_full_application_schema_and_preserves_source(tmp_path, m
     before = backup.read_bytes()
     result = run_drill(backup)
     assert result["ok"] and result["safety_copy_verified"]
-    assert result["tables"]["accounts"] == 16
+    assert result["tables"]["accounts"] == 14
     assert "position_legs" in result["tables"]
     assert backup.read_bytes() == before
 
