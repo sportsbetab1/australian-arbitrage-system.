@@ -30,6 +30,7 @@ from app import database as database_module
 from app.database import get_db, init_db, migrate_position_schema
 from scripts.backup_db import create_backup
 from app.odds import OddsProviderError, build_h2h_candidates, fetch_json
+from app.global_scanner import supported_sports, REGIONS
 from app.customer_api import router as customer_router
 
 # ============================================================
@@ -1248,6 +1249,30 @@ def odds_sports():
     if not isinstance(data, list):
         raise HTTPException(502, "The odds provider returned an invalid sports list.")
     return {"sports": data, "quota": usage}
+
+
+@app.get("/api/odds/global/catalog")
+def global_odds_catalog():
+    """Discover provider-supported competitions globally, without spending odds quota."""
+    try:
+        catalog, usage = fetch_json(
+            os.getenv("ODDS_API_KEY", ""),
+            "sports",
+            {"all": "false"},
+            base_url=os.getenv("ODDS_API_BASE", "https://api.the-odds-api.com/v4"),
+        )
+    except OddsProviderError as error:
+        raise HTTPException(error.status_code, str(error)) from None
+    if not isinstance(catalog, list):
+        raise HTTPException(502, "The odds provider returned an invalid sports list.")
+    keys = supported_sports(catalog)
+    return {
+        "sport_keys": keys,
+        "competition_count": len(keys),
+        "bookmaker_regions": list(REGIONS),
+        "coverage_note": "Competition keys are global; bookmaker regions do not represent event countries.",
+        "quota": usage,
+    }
 
 
 @app.get("/api/odds/scan/{sport_key}")
