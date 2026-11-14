@@ -157,6 +157,26 @@ def init_db():
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS position_drafts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_by_user_id INTEGER NOT NULL REFERENCES auth_users(id),
+        payload_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'AwaitingConfirmation'
+            CHECK(status IN ('AwaitingConfirmation', 'Ready', 'Cancelled', 'Recorded')),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS position_draft_approvals (
+        draft_id INTEGER NOT NULL REFERENCES position_drafts(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES auth_users(id),
+        approved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(draft_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_position_drafts_status
+    ON position_drafts(status, created_at);
+
     CREATE TABLE IF NOT EXISTS auth_users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -204,8 +224,7 @@ def init_db():
         "Unibet",
         "Dabble",
         "Picklebet",
-        "Ladbrokes",
-        "TAB"
+        "Ladbrokes"
     ]
 
     for owner in ("Hunta", "Jay"):
@@ -219,6 +238,11 @@ def init_db():
                 (owner, bookmaker)
             )
 
+    retired = conn.execute("UPDATE accounts SET status = 'inactive' WHERE bookmaker = 'TAB' AND status = 'active'")
+    if retired.rowcount:
+        conn.execute("INSERT INTO audit_log(action, details) VALUES (?, ?)",
+                     ("bookmaker_retired", '{"bookmaker":"TAB","reason":"Removed from supported bookmakers; history retained"}'))
+
     subscription_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(push_subscriptions)")
     }
@@ -231,6 +255,8 @@ def init_db():
     )
 
     protect_journals(conn, ("audit_log", "profit_allocations"))
+    from app.customer_schema import migrate_customer_platform
+    migrate_customer_platform(conn)
     conn.commit()
     conn.close()
 

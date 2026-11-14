@@ -33,6 +33,7 @@ from app.database import get_db, init_db, migrate_position_schema
 from scripts.backup_db import create_backup
 from app.odds import OddsProviderError, build_h2h_candidates, fetch_json, normalise_sports
 from app import rate_limits
+from app.customer_api import router as customer_router
 
 # ============================================================
 # SYSTEM SETTINGS
@@ -59,10 +60,9 @@ BOOKMAKERS = [
     "Dabble",
     "Picklebet",
     "Ladbrokes",
-    "TAB",
 ]
 
-MAX_OPEN_POSITIONS = 15
+MAX_OPEN_POSITIONS = None  # Exposure and other risk locks, not a slot count, govern concurrency.
 
 MAX_EXPOSURE = round(
     STARTING_BANKROLL * MAX_EXPOSURE_PERCENT, 2
@@ -108,6 +108,9 @@ def initialise_system():
 
         CREATE INDEX IF NOT EXISTS idx_position_legs_position
         ON position_legs(position_id);
+
+        CREATE INDEX IF NOT EXISTS idx_position_legs_duplicate_lookup
+        ON position_legs(account_id, event_id, market_id, outcome_id, accepted, settled);
 
         CREATE INDEX IF NOT EXISTS idx_positions_status
         ON positions(status);
@@ -169,6 +172,8 @@ app.mount(
     name="static",
 )
 
+app.include_router(customer_router)
+
 @app.exception_handler(RequestValidationError)
 async def sanitized_validation_error(request: Request, error: RequestValidationError):
     details = [
@@ -220,7 +225,7 @@ async def require_authenticated_api(request: Request, call_next):
                 status_code=403,
             )
 
-    if path in {"/api/auth/login", "/api/auth/setup"} and request.method == "POST":
+    if path in {"/api/auth/login", "/api/auth/setup", "/api/customer/login"} and request.method == "POST":
         retry = await run_in_threadpool(rate_limits.consume, "auth-global", "all", 60)
         if not retry:
             identity = request.client.host if request.client else "unknown"
@@ -229,7 +234,7 @@ async def require_authenticated_api(request: Request, call_next):
             return JSONResponse({"detail": "Too many requests. Please try again shortly."},
                                 status_code=429, headers={"Retry-After": str(retry)})
 
-    if not path.startswith("/api/") or path in AUTH_PUBLIC_PATHS:
+    if not path.startswith("/api/") or path in AUTH_PUBLIC_PATHS or path.startswith("/api/customer/"):
         return await call_next(request)
 
     token = request.cookies.get(AUTH_COOKIE_NAME)
@@ -262,9 +267,14 @@ async def prevent_api_caching(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    if request.url.path.startswith("/api/"):
-        response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+    if request.url.path.startswith("/api/") or request.url.path == "/":
+        # Financial and authenticated UI responses must not be stored by shared
+        # proxies or browser caches after logout or account switching.
+        response.headers["Cache-Control"] = "no-store, private"
         response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     return response
 
 
@@ -676,6 +686,16 @@ def calculate(candidate: Candidate):
     }
 
 
+def require_qualified_open_roi(roi, *, allow_unmatched=False):
+    """Enforce the worst-case net ROI floor without hiding a live unmatched bet."""
+    if not allow_unmatched and roi < MIN_NET_ROI:
+        raise HTTPException(
+            409,
+            f"Worst-case net ROI {roi:.2%} is below the "
+            f"required {MIN_NET_ROI:.2%}. No position was recorded.",
+        )
+
+
 def calculate_position_roi(legs, possible_outcomes, commission_by_account):
     total_stake = sum(leg.stake for leg in legs)
 
@@ -799,15 +819,6 @@ def check_new_position_allowed(con, additional_exposure):
             409,
             "New positions paused: a settlement-buffer commitment "
             "has exceeded its 24-hour deadline.",
-        )
-
-    open_positions = con.execute(
-        "SELECT COUNT(*) AS total FROM positions WHERE status IN ('Open', 'Unmatched')"
-    ).fetchone()["total"]
-    if open_positions >= MAX_OPEN_POSITIONS:
-        raise HTTPException(
-            409,
-            f"Open-position limit reached ({MAX_OPEN_POSITIONS}). Settle an existing position before adding another.",
         )
 
     current = get_open_exposure(con)
@@ -1144,6 +1155,9 @@ def dashboard():
             FROM positions
             WHERE status IN ('Open', 'Unmatched')
         """).fetchone()["total"]
+        unmatched_count = con.execute("""
+            SELECT COUNT(*) AS total FROM positions WHERE status = 'Unmatched'
+        """).fetchone()["total"]
 
         settled = con.execute("""
             SELECT
@@ -1183,6 +1197,12 @@ def dashboard():
             float(allocations["withdrawals"]), 2
         ),
         "buffer": buffer,
+        "unmatched_positions": unmatched_count,
+        "new_positions_paused": bool(buffer["new_positions_paused"] or unmatched_count),
+        "risk_lock_reasons": (
+            (["Overdue settlement-buffer commitment"] if buffer["new_positions_paused"] else [])
+            + (["Unmatched position requires resolution"] if unmatched_count else [])
+        ),
     }
 
 
@@ -1341,6 +1361,149 @@ def opportunities():
 
 
 # ============================================================
+# TWO-OPERATOR POSITION DRAFT APPROVAL
+# ============================================================
+
+class PositionDraftInput(OpenPosition):
+    # Drafting never asserts that a bookmaker has accepted a bet.
+    manual_confirmation: bool = False
+
+
+def validate_draft_structure(req: OpenPosition):
+    if not req.market_rules_verified:
+        raise HTTPException(400, "Market rules must be verified before drafting.")
+    if len(set(req.possible_outcomes)) != 2 or any(
+        not item.strip() for item in req.possible_outcomes
+    ):
+        raise HTTPException(400, "A binary market requires two distinct outcomes.")
+    if {leg.outcome_id for leg in req.legs} != set(req.possible_outcomes):
+        raise HTTPException(400, "Both distinct outcomes must be covered.")
+    if any(leg.event_id != req.event_id or leg.market_id != req.market_id
+           for leg in req.legs):
+        raise HTTPException(400, "Both legs must match the event and market IDs.")
+    if any(leg.manually_accepted for leg in req.legs):
+        raise HTTPException(400, "A draft cannot claim a bookmaker accepted a bet.")
+    if len({leg.account_id for leg in req.legs}) != 2:
+        raise HTTPException(400, "Two distinct bookmaker accounts are required.")
+
+
+@app.post("/api/positions/drafts")
+def create_position_draft(req: PositionDraftInput, request: Request):
+    validate_draft_structure(req)
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        ids = [leg.account_id for leg in req.legs]
+        rows = con.execute(
+            "SELECT id, owner, bookmaker, status FROM accounts WHERE id IN (?, ?)",
+            ids,
+        ).fetchall()
+        if len(rows) != 2 or {row["owner"] for row in rows} != {"Hunta", "Jay"}:
+            raise HTTPException(400, "One active Hunta and one active Jay account are required.")
+        if any(row["status"] != "active" for row in rows):
+            raise HTTPException(409, "Both bookmaker accounts must be active.")
+        commissions = {
+            row["id"]: 6.0 if row["bookmaker"] == "Betfair" else 0.0
+            for row in rows
+        }
+        result = calculate_position_roi(req.legs, req.possible_outcomes, commissions)
+        require_qualified_open_roi(result["roi"])
+        check_new_position_allowed(con, result["total_stake"])
+        draft_id = con.execute(
+            "INSERT INTO position_drafts(created_by_user_id, payload_json) VALUES (?, ?)",
+            (request.state.auth_user["id"], req.model_dump_json()),
+        ).lastrowid
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            ("position_draft_created", json.dumps({
+                "draft_id": draft_id,
+                "created_by": request.state.auth_user["username"],
+                "worst_case_roi": result["roi"],
+            })),
+        )
+    return {"ok": True, "draft_id": draft_id,
+            "status": "AwaitingConfirmation", "required_distinct_approvals": 2,
+            "approvals": 0, **result}
+
+
+@app.get("/api/positions/drafts")
+def list_position_drafts():
+    with closing(db()) as con:
+        rows = con.execute("""
+            SELECT d.id, d.status, d.created_at, d.updated_at,
+                   u.username AS created_by,
+                   (SELECT COUNT(*) FROM position_draft_approvals a
+                    WHERE a.draft_id = d.id) AS approvals
+            FROM position_drafts d
+            JOIN auth_users u ON u.id = d.created_by_user_id
+            ORDER BY d.id DESC LIMIT 100
+        """).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/positions/drafts/{draft_id}/approve")
+def approve_position_draft(draft_id: int, request: Request):
+    user = request.state.auth_user
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        draft = con.execute(
+            "SELECT id, status FROM position_drafts WHERE id = ?", (draft_id,)
+        ).fetchone()
+        if not draft:
+            raise HTTPException(404, "Draft not found.")
+        if draft["status"] != "AwaitingConfirmation":
+            raise HTTPException(409, "Only awaiting drafts can be approved.")
+        already = con.execute(
+            "SELECT 1 FROM position_draft_approvals WHERE draft_id = ? AND user_id = ?",
+            (draft_id, user["id"]),
+        ).fetchone()
+        if already:
+            raise HTTPException(409, "This operator has already approved the draft.")
+        con.execute(
+            "INSERT INTO position_draft_approvals(draft_id, user_id) VALUES (?, ?)",
+            (draft_id, user["id"]),
+        )
+        approvals = con.execute(
+            "SELECT COUNT(*) AS total FROM position_draft_approvals WHERE draft_id = ?",
+            (draft_id,),
+        ).fetchone()["total"]
+        status = "Ready" if approvals >= 2 else "AwaitingConfirmation"
+        con.execute(
+            "UPDATE position_drafts SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (status, draft_id),
+        )
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            ("position_draft_approved", json.dumps({
+                "draft_id": draft_id, "approved_by": user["username"],
+                "approvals": approvals, "status": status,
+            })),
+        )
+    return {"ok": True, "draft_id": draft_id, "status": status,
+            "approvals": approvals, "required_distinct_approvals": 2,
+            "message": "Approval recorded. No bookmaker bet was placed."}
+
+
+@app.post("/api/positions/drafts/{draft_id}/cancel")
+def cancel_position_draft(draft_id: int, request: Request):
+    with closing(db()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        updated = con.execute("""
+            UPDATE position_drafts SET status = 'Cancelled',
+                   updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('AwaitingConfirmation', 'Ready')
+        """, (draft_id,)).rowcount
+        if not updated:
+            raise HTTPException(409, "Draft is missing or cannot be cancelled.")
+        con.execute(
+            "INSERT INTO audit_log(action, details) VALUES (?, ?)",
+            ("position_draft_cancelled", json.dumps({
+                "draft_id": draft_id, "cancelled_by": request.state.auth_user["username"],
+            })),
+        )
+    return {"ok": True, "draft_id": draft_id, "status": "Cancelled"}
+
+
+# ============================================================
 # POSITION CREATION
 # ============================================================
 
@@ -1432,6 +1595,33 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
                         "update its opening balance or deposits first.",
                     )
 
+        # Prevent accidentally recording the same accepted bookmaker bet
+        # twice. Only accepted, unsettled legs count as live duplicates.
+        for leg in req.legs:
+            if not leg.manually_accepted:
+                continue
+            duplicate = con.execute("""
+                SELECT l.id
+                FROM position_legs AS l
+                JOIN positions AS p ON p.id = l.position_id
+                WHERE l.account_id = ?
+                  AND l.event_id = ?
+                  AND l.market_id = ?
+                  AND l.outcome_id = ?
+                  AND l.accepted = 1
+                  AND l.settled = 0
+                  AND p.status IN ('Open', 'Unmatched')
+                LIMIT 1
+            """, (
+                leg.account_id, leg.event_id, leg.market_id, leg.outcome_id,
+            )).fetchone()
+            if duplicate:
+                raise HTTPException(
+                    409,
+                    "An unsettled accepted bet already exists for this "
+                    "account, event, market and outcome.",
+                )
+
         commission_by_account = {
             row["id"]: 6.0 if row["bookmaker"] == "Betfair" else 0.0
             for row in account_rows
@@ -1465,6 +1655,11 @@ def _create_position(req: OpenPosition, request: Request, allow_unmatched: bool)
             req.possible_outcomes,
             commission_by_account,
         )
+
+        # Fully accepted positions must satisfy the hard net-profit floor.
+        # A single already-accepted leg may still be recorded as Unmatched,
+        # even at a loss, so exposure can be monitored and safely hedged.
+        require_qualified_open_roi(result["roi"], allow_unmatched=allow_unmatched)
 
         check_new_position_allowed(con, result["total_stake"])
 

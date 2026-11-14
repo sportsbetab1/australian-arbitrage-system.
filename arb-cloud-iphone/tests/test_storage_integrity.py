@@ -22,7 +22,7 @@ def test_new_database_is_private_and_existing_permissions_are_preserved(storage)
     assert stat.S_IMODE(storage.stat().st_mode) == 0o600
     storage.chmod(0o640)
     with closing(database.get_db()) as con:
-        assert con.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 16
+        assert con.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 14
     assert stat.S_IMODE(storage.stat().st_mode) == 0o640
 
 

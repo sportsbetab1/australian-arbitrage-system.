@@ -61,3 +61,21 @@ bookmaker accounts. Partial cashouts/reversals and horse racing are not
 implemented. Monitoring, edge connection/body limits and host-level protection
 remain configuration tasks. Detailed commands and recovery instructions are in
 `arb-cloud-iphone/ops/README.md`.
+
+## Frontend/backend integration
+
+The backend-upgrade dashboard/API work is reconciled with main's provider,
+request-budget, journal and recovery safeguards. The owner confirmed the newer
+rules: no fixed position-count cap, AUD 7,500 exposure cap retained, TAB retired,
+and ordinary positions below 1.5% ROI rejected. Emergency unmatched recording
+remains available. Existing TAB balances/history are retained with inactive
+accounts. Customer endpoints remain separately authenticated and tenant scoped;
+customer trading remains disabled and the public launch gates remain open.
+The alternative commercial-identity draft is still separate: its competing
+identity/tenant model has not been merged into this application.
+
+The integrated regression suite passed 186 tests before the additional TAB
+retirement regression, which also passed. Browser checks used an isolated local
+database and fictional credentials at mobile and desktop widths, including
+setup/sign-in, live risk figures, input preservation, calculation and graceful
+reporting outage handling. No live odds or bookmaker operations were performed.

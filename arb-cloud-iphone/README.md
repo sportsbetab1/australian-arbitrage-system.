@@ -15,8 +15,10 @@ These values describe the backend constants. They are planning controls, not bal
 - Minimum calculated worst-case net ROI: 1.5%
 - Profit allocation after positive settled P/L: 75% reinvestment and 25% withdrawal
 - Betfair commission: currently assumed to be 6% on winnings, using a simplified model
-- Concurrent positions: capped at 15 open/unmatched positions and by the AUD 7,500 exposure limit; each Betfair account is also limited to one unsettled leg.
-- Bookmaker accounts are seeded for Sportsbet, Betfair, PointsBet, Unibet, Dabble, Picklebet, Ladbrokes, and TAB.
+- Concurrent positions: governed by the AUD 7,500 exposure limit and risk locks, with no fixed slot cap; each Betfair account is also limited to one unsettled leg.
+- Bookmaker accounts are seeded for Sportsbet, Betfair, PointsBet, Unibet, Dabble, Picklebet, and Ladbrokes.
+- Existing TAB records are retained for balances and settlement history, but
+  marked inactive so they cannot accept new positions.
 - Position recording: binary/two-outcome markets only
 
 ## Sign-in and assisted vetting
@@ -37,7 +39,7 @@ account, not a separate access role. Notifications and push subscriptions remain
 user scoped. The host recovery command resets a password and revokes that user's
 sessions together; a self-service recovery flow is not implemented.
 
-A qualified candidate exposes the **Open assisted vetting** button. The checklist asks the signed-in person to check the market, rules, outcomes, current odds, commission, limits, and selected accounts. One signed-in person may confirm and record both legs; a second person is not required. The user places both bets manually and, for each accepted leg, records the odds and stake the bookmaker actually accepted. The position calculation and account ledger use those entered accepted values. If actual accepted prices fall below the 1.5% candidate threshold, the system still records the placed legs and flags the lower calculated return so exposure and settlement remain tracked.
+A qualified candidate exposes the **Open assisted vetting** button. The checklist asks the signed-in person to check the market, rules, outcomes, current odds, commission, limits, and selected accounts. One signed-in person may confirm and record both legs; a second person is not required. The user places both bets manually and, for each accepted leg, records the odds and stake the bookmaker actually accepted. The position calculation and account ledger use those entered accepted values. Ordinary positions below 1.5% worst-case ROI are rejected without changing balances. Emergency unmatched-leg recording remains available for recovery.
 
 If exactly one leg was accepted, **Record one accepted leg as unmatched** stores the exposure, counts it against the cap, marks the rejected leg as not placed, and pauses new positions. One or more later manually placed hedges can be recorded on that position, but each must improve the calculated worst-case return. The app checks recorded balance and exposure. New positions remain paused until all accepted legs settle. The app cannot verify bookmaker acceptance or place the hedge itself.
 

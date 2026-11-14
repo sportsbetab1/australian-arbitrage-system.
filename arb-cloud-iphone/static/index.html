@@ -84,6 +84,45 @@ dialog::backdrop{background:#2B2024B8}
 a{color:var(--deep-teal)}
 @media(prefers-reduced-motion:reduce){button{transition:none}button:hover:not(:disabled){transform:none}}
 
+
+/* Deep-navy production dashboard palette; high-contrast controls on iPhone. */
+:root{
+ --app-bg:#0A1425;--surface:#14243B;--ink:#EDF5FF;--muted-ink:#A9BED5;
+ --navy:#09192E;--indigo:#172D4D;--blue:#43B7E9;--aqua:#61DCE9;--mint:#62E3BF;
+ --lavender:#233B58;--rose:#AD78AC;--magenta:#D4A2F3;--border:#304763;
+ --alert:#FF8B9C;--hot-pink:#FF749A;--coral:#FF8B9C;--sky:#69C9F0;
+ --teal:#61DCE9;--violet:#AF9AF2;--deep-teal:#79D8ED;--gold:#F8D77C;
+ color-scheme:dark;
+}
+body{background:var(--app-bg);color:var(--ink)}
+header{background:linear-gradient(135deg,#09182C,#1B3453 75%,#214B67);color:#EAF2FF}
+header .white{color:#DAE8F8}
+.card{background:var(--surface);border-color:var(--border);box-shadow:0 4px 16px #020A16A6}
+.metric{color:#F2F8FF}
+.muted,.label,small{color:var(--muted-ink)}
+button{background:linear-gradient(120deg,#247AB3,#3AB6DB);color:#FFFFFF;box-shadow:none}
+button.secondary{background:#29496B;color:#F2F8FF}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #8EE6FF;outline-offset:2px}
+input,select,textarea{background:#0F2036;color:#F2F8FF;border:1px solid #49617C}
+input::placeholder,textarea::placeholder{color:#A9BED5}
+label{color:#C2D5E8}
+.item,.check-row{border-color:var(--border)}
+.pill{background:#214E48;color:#B5F8E6}
+.warn{background:#514125;border:1px solid #C9A45C;color:#FFE5AC}
+.auth-gate{background:linear-gradient(145deg,#09182C,#183353)}
+.auth-panel{border-top-color:#66CFEA}
+.vetting-card{background:#172D48;border-color:#3B91BA}
+.vetting-dock{background:#0C213B}
+.vetting-dock button{background:#2B9E8B;color:#FFFFFF}
+dialog{background:#14243B;color:#F2F8FF;border-color:#426182}
+dialog::backdrop{background:#020A16D9}
+#vettingLegAccounts .item,#manualLegChecks .item{background:#1A334E;border-color:#3A5C79}
+.result-message{background:#1B484D;border-color:#3BAFAE;color:#DDFBFC}
+.error,.error-message,.pill.bad{background:#512B3B;color:#FFD4DC;border-color:#FF8B9C}
+.pill.good{background:#214E48;color:#B5F8E6}
+a{color:#87D9FF}
+#status.bad{color:#FFD4A0;font-weight:700}
+
 </style></head>
 <body>
 <header><div class="row"><div><h1>Arbitrage Control</h1><div class="white">Cloud scanner • iPhone dashboard</div></div><span class="pill">MANUAL BETTING</span></div><div id="authControls" class="row hidden"><span>Signed in as <b id="userName"></b></span><button class="secondary" type="button" onclick="logout()">Sign out</button></div></header>
@@ -106,14 +145,23 @@ a{color:var(--deep-teal)}
  </div>
 </div>
 <div class="grid">
- <div class="card"><div class="label">Starting bankroll</div><div class="metric" id="bankroll">$10,000</div></div>
- <div class="card"><div class="label">Open exposure</div><div class="metric" id="exposure">$0</div></div>
- <div class="card"><div class="label">Open positions</div><div class="metric" id="active">0</div></div>
- <div class="card"><div class="label">Available capacity</div><div class="metric" id="capacity">$2,500</div></div>
+ <div class="card"><div class="label">Starting bankroll</div><div class="metric" id="bankroll">—</div></div>
+ <div class="card"><div class="label">Open exposure</div><div class="metric" id="exposure">—</div></div>
+ <div class="card"><div class="label">Open positions</div><div class="metric" id="active">—</div></div>
+ <div class="card"><div class="label">Available capacity</div><div class="metric" id="capacity">—</div></div>
 </div>
+<div class="grid" aria-label="Risk and profit summary">
+ <div class="card"><div class="label">Maximum exposure</div><div class="metric" id="maximumExposure">—</div></div>
+ <div class="card"><div class="label">Protected reserve</div><div class="metric" id="protectedReserve">—</div></div>
+ <div class="card"><div class="label">Settled positions</div><div class="metric" id="settledPositions">—</div></div>
+ <div class="card"><div class="label">Realised P/L</div><div class="metric" id="realisedProfit">—</div></div>
+ <div class="card"><div class="label">Reinvested</div><div class="metric" id="reinvestedProfit">—</div></div>
+ <div class="card"><div class="label">Withdrawals</div><div class="metric" id="withdrawalAllocation">—</div></div>
+</div>
+<div class="card"><b>Settlement buffer</b><div id="bufferSummary" class="muted" role="status">Loading…</div></div>
 <div class="card">
  <div class="row"><b>Scanner status</b><span class="pill" id="status">Connecting</span></div>
- <p class="muted">Minimum net theoretical ROI: 1.5% • $500 combined stake per set. The live odds feed is on-demand and provides candidates only. Verify prices, rules, limits, and account availability manually; all bets remain manual.</p>
+ <p class="muted">Minimum net theoretical ROI: 1.5%. Stakes and exposure are subject to server-side risk limits. The live odds feed is on-demand and provides candidates only. Verify prices, rules, limits, and account availability manually; all bets remain manual.</p>
  <button class="secondary" onclick="enablePush()">Enable iPhone push notifications</button>
 </div>
 <div class="card vetting-card">
@@ -297,16 +345,28 @@ async function recordAccountTransaction(accountId,transactionType){
 }
 function slug(value){return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'outcome'}
 async function api(path,opts={}){
- const headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
- const r=await fetch('/api'+path,Object.assign({credentials:'same-origin',headers:headers},opts));
- let j={};try{j=await r.json()}catch(e){j={}}
- if(!r.ok){if(r.status===401&&path!=='/auth/login'){showAuthGate(false)}throw Error(j.detail||'Request failed')}
+ const headers=Object.assign({'Accept':'application/json'},opts.headers||{});
+ if(opts.body!==undefined && !(opts.body instanceof FormData))headers['Content-Type']='application/json';
+ let r;
+ try{r=await fetch('/api'+path,Object.assign({credentials:'same-origin',headers},opts))}
+ catch(e){throw Error('Unable to reach the server. Check your connection and retry.')}
+ let j={};try{j=await r.json()}catch(e){}
+ if(r.status===204)return null;
+ if(!r.ok){
+  if(r.status===401&&path!=='/auth/login'&&path!=='/auth/setup'){
+   currentUser=null;authGeneration++;
+   if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}
+   showAuthGate(false);
+  }
+  const detail=j.detail;
+  const message=typeof detail==='string'?detail:Array.isArray(detail)?detail.map(x=>x.msg||'Invalid field').join('; '):'Request failed (HTTP '+r.status+')';
+  throw Error(message);
+ }
  return j
 }
 function showAuthGate(setup){
  const gate=document.getElementById('authGate');gate.classList.remove('hidden');
  document.getElementById('authControls').classList.add('hidden');
- document.getElementById('authLoginPane');
  document.getElementById('loginForm').classList.toggle('hidden',!!setup);
  document.getElementById('setupForm').classList.toggle('hidden',!setup);
  document.getElementById('authTitle').textContent=setup?'Set up Hunta and Jay accounts':'Sign in';
@@ -324,7 +384,7 @@ document.getElementById('loginForm').addEventListener('submit',async function(e)
  e.preventDefault();const message=document.getElementById('authMessage');message.classList.add('hidden');
  try{
   const x=await api('/auth/login',{method:'POST',body:JSON.stringify({username:document.getElementById('loginUsername').value,password:document.getElementById('loginPassword').value})});
-  currentUser=x.user;document.getElementById('loginPassword').value='';showAuthenticated();await startDashboard();
+  authGeneration++;currentUser=x.user;document.getElementById('loginPassword').value='';showAuthenticated();await startDashboard();
  }catch(err){authError(err.message)}
 });
 document.getElementById('setupForm').addEventListener('submit',async function(e){
@@ -337,7 +397,7 @@ document.getElementById('setupForm').addEventListener('submit',async function(e)
 });
 async function logout(){
  try{await api('/auth/logout',{method:'POST',body:'{}'})}catch(e){}
- currentUser=null;lastOpportunity=null;lastCandidate=null;showAuthGate(false);updateVettingAvailability();
+ currentUser=null;authGeneration++;lastOpportunity=null;lastCandidate=null;if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}showAuthGate(false);updateVettingAvailability();
 }
 async function initialize(){
  renderLegs();
@@ -345,24 +405,55 @@ async function initialize(){
   const s=await api('/auth/status');
   if(s.setup_required){showAuthGate(true);return}
   if(!s.authenticated){showAuthGate(false);return}
-  currentUser=s.user;showAuthenticated();await startDashboard();
+  authGeneration++;currentUser=s.user;showAuthenticated();await startDashboard();
  }catch(e){showAuthGate(false);authError(e.message)}
 }
 async function startDashboard(){
  await refresh();
- if(!refreshTimer)refreshTimer=setInterval(refresh,15000)
+ if(currentUser&&!refreshTimer)refreshTimer=setInterval(refresh,15000)
+}
+let refreshInProgress=false, authGeneration=0;
+function aud(value){return new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(Number(value)||0)}
+function renderRiskSummary(d){
+ const set=(id,value)=>document.getElementById(id).textContent=value;
+ set('maximumExposure',aud(d.maximum_exposure));
+ set('protectedReserve',aud(Math.max(0,Number(d.starting_bankroll||0)-Number(d.maximum_exposure||0))));
+ set('settledPositions',String(d.settled_positions??0));
+ set('realisedProfit',aud(d.realised_profit_loss));
+ set('reinvestedProfit',aud(d.reinvested_profit));
+ set('withdrawalAllocation',aud(d.withdrawal_allocation));
+ const b=d.buffer||{};
+ const overdue=Number(b.overdue_items||0);
+ const el=document.getElementById('bufferSummary');
+ el.textContent='Limit: '+aud(b.limit)+' • Committed: '+aud(b.committed)+' • Available: '+aud(b.available)+(overdue?' • OVERDUE: '+overdue:'');
+ el.classList.toggle('warn',overdue>0);
+ const status=document.getElementById('status');
+ if(d.new_positions_paused){
+  const reasons=Array.isArray(d.risk_lock_reasons)?d.risk_lock_reasons:[];
+  status.textContent='New positions paused — '+(reasons.join('; ')||'risk lock active');
+  status.classList.add('bad');
+ }else{status.classList.remove('bad')}
 }
 async function refresh(){
+ if(refreshInProgress||!currentUser)return;
+ refreshInProgress=true;
+ const generation=authGeneration;
  try{
-  const results=await Promise.all([api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts'),api('/reports/summary'),api('/notifications'),api('/backups')]);
-  const d=results[1],p=results[2],o=results[3],accountRows=results[4],report=results[5],notificationData=results[6],backupData=results[7];
+  // Keep core risk/position data independent from optional report and backup
+  // services. An optional endpoint outage must not hide exposure information.
+  const core=await Promise.all([
+   api('/config'),api('/dashboard'),api('/positions'),api('/opportunities'),api('/accounts')
+  ]);
+  if(!currentUser||generation!==authGeneration)return;
+  const d=core[1],p=core[2],o=core[3],accountRows=core[4];
+  renderRiskSummary(d);
   positionsCache=p;
-  renderAccounts(accountRows);renderReports(report);renderNotifications(notificationData);renderBackups(backupData);
-  document.getElementById('status').textContent='API online';
-  document.getElementById('bankroll').textContent='$'+Number(d.starting_bankroll).toLocaleString();
-  document.getElementById('exposure').textContent='$'+Number(d.open_exposure).toLocaleString();
+  renderAccounts(accountRows);
+  if(!d.new_positions_paused)document.getElementById('status').textContent='API online';
+  document.getElementById('bankroll').textContent=aud(d.starting_bankroll);
+  document.getElementById('exposure').textContent=aud(d.open_exposure);
   document.getElementById('active').textContent=String(d.open_positions);
-  document.getElementById('capacity').textContent='$'+Number(d.remaining_exposure).toLocaleString();
+  document.getElementById('capacity').textContent=aud(d.remaining_exposure);
   const openPositions=p.filter(function(x){return x.status==='Open'||x.status==='Unmatched'});
   document.getElementById('sets').innerHTML=openPositions.map(function(x){
    const legs=(x.legs||[]).map(function(l){
@@ -374,7 +465,18 @@ async function refresh(){
    return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.status)+' • '+escapeHtml(x.market)+' • $'+Number(x.total_stake).toFixed(2)+' • '+(Number(x.expected_roi)*100).toFixed(2)+'% theoretical</div>'+legs+hedgeAction+'</div>';
   }).join('')||'<small>No open positions.</small>';
   document.getElementById('opps').innerHTML=o.map(function(x){return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • '+(Number(x.roi)*100).toFixed(2)+'% • '+escapeHtml(x.status)+'</div></div>'}).join('')||'<small>No opportunities yet.</small>';
- }catch(e){document.getElementById('status').textContent=e.message==='Please sign in to use the arbitrage dashboard.'?'Sign in required':'API unavailable'}
+  // Update core financial figures immediately, before optional services settle.
+  const optional=await Promise.allSettled([
+   api('/reports/summary'),api('/notifications'),api('/backups')
+  ]);
+  if(!currentUser||generation!==authGeneration)return;
+  if(optional[0].status==='fulfilled')renderReports(optional[0].value);
+  if(optional[1].status==='fulfilled')renderNotifications(optional[1].value);
+  if(optional[2].status==='fulfilled')renderBackups(optional[2].value);
+  if(!d.new_positions_paused&&optional.some(result=>result.status==='rejected'))
+   document.getElementById('status').textContent='API online — some secondary services unavailable';
+ }catch(e){if(generation===authGeneration)document.getElementById('status').textContent=!currentUser?'Sign in required':'API unavailable: '+e.message}
+ finally{refreshInProgress=false}
 }
 async function loadOddsSports(){
  const status=document.getElementById('liveOddsStatus');
