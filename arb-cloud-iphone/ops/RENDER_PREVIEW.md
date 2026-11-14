@@ -1,0 +1,63 @@
+# Render Free: private operator preview
+
+Public paid/customer development is paused. This deployment is for Hunta and
+Jay to preview the operator dashboard behind its existing sign-in.
+The URL and sign-in page are publicly reachable; the account APIs require login.
+This is not a Render private-network service or an IP-restricted deployment.
+
+## Storage limitation
+
+Render Free has no persistent disk. Its local SQLite database and snapshots
+are erased on sleep, restart or redeploy, including accounts and session tokens.
+The preview banner is enabled by `APP_PREVIEW_MODE=true`. Use fictional records
+and unique preview passwords. Do not import an operating database or rely on
+this host for financial records, backups, scheduled scanning or push workers.
+After a reset, both operator accounts need first-run setup again using the
+private setup token. Keep that token in a password manager and Render settings.
+
+Reference: https://render.com/docs/free
+
+## Create the free preview
+
+1. Sign in at https://dashboard.render.com and connect the GitHub repository
+   `sportsbetab1/australian-arbitrage-system.`.
+2. Create a Blueprint using the branch containing these changes. Set Blueprint
+   Path to `arb-cloud-iphone/ops/render-free-preview.yaml`. Check that the web
+   service is **Free**, with no disk or other paid resources. The existing
+   `arb-cloud-iphone/render.yaml` requests a paid service; do not use it here.
+3. In the private environment form, set `AUTH_SETUP_TOKEN` to a fresh random
+   token of at least 32 characters, and enter the existing `ODDS_API_KEY`.
+   Never commit, paste into chat or put either value in the service URL.
+4. Deploy manually. The start command trusts forwarded scheme/client headers
+   from Render's ingress so HTTPS Origin checks work. The wildcard is intended
+   only for Render's ingress-controlled service port; never reuse it on a
+   directly reachable VPS. Confirm same-origin requests work and cross-origin
+   POSTs fail on the actual deployment.
+5. Open the HTTPS URL, create Hunta/Jay preview passwords with the setup token,
+   and sign in. Verify the temporary-preview banner, 14 active accounts, risk
+   figures, sign-out and denial of `/api/accounts` when signed out.
+
+## Connect and verify The Odds API
+
+The provider key is read on the server. The browser receives only a configured
+flag, never the key. The default base is `https://api.the-odds-api.com/v4`.
+
+1. In Live odds, confirm “API key configured”. This only confirms presence.
+2. Click **Load available sports** to verify the provider accepts the key.
+3. Select a sport you have access to and click **Scan Australian odds now**
+   once. This can consume provider credits. Check the event count, scan time
+   and remaining quota. Zero candidates can be a successful response.
+4. Missing-key, rejected-key, exhausted-quota and network errors appear beside
+   the controls. Resolve them in the provider account/private host settings.
+
+Requests use Australian (`au`) head-to-head (`h2h`) markets and decimal odds.
+Scanning is on demand, not continuous. Provider coverage depends on your plan
+and the sport; this does not promise all seven bookmakers. Quotes over three
+minutes old and events already started are excluded. Three-outcome candidates
+can be calculated but the manual position workflow currently supports two
+legs only. Verify actual bookmaker availability and settlement rules.
+
+For a durable private app, first choose persistent hosting or implement and
+test a durable database adapter. Free Render Postgres is not a drop-in SQLite
+replacement and currently expires after 30 days. Do not restore SQLite from
+an object-storage copy at every startup as a substitute for a transactional DB.

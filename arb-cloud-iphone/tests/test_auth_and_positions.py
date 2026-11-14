@@ -49,6 +49,21 @@ def test_authentication_protects_api_and_login_creates_session(client):
     assert client.get("/api/accounts").status_code == 200
 
 
+def test_config_reports_odds_presence_without_disclosing_key(client, monkeypatch):
+    assert client.get("/api/config").status_code == 401
+    login(client)
+    monkeypatch.setenv("ODDS_API_KEY", "private-test-key-never-returned")
+    monkeypatch.setenv("APP_PREVIEW_MODE", "true")
+    response = client.get("/api/config")
+    assert response.json()["odds_feed"] == {
+        "configured": True, "region": "au", "market": "h2h", "mode": "on-demand",
+    }
+    assert response.json()["preview_mode"] is True
+    assert "private-test-key-never-returned" not in response.text
+    monkeypatch.setenv("ODDS_API_KEY", "   ")
+    assert client.get("/api/config").json()["odds_feed"]["configured"] is False
+
+
 def test_mutating_api_rejects_missing_or_cross_origin_origin(client):
     missing = client.post(
         "/api/auth/login",

@@ -929,6 +929,13 @@ def config():
         "bookmakers": BOOKMAKERS,
         "bet_placement": "manual only",
         "concurrent_position_limit": MAX_OPEN_POSITIONS,
+        "preview_mode": os.getenv("APP_PREVIEW_MODE", "false").lower() == "true",
+        "odds_feed": {
+            "configured": bool(os.getenv("ODDS_API_KEY", "").strip()),
+            "region": "au",
+            "market": "h2h",
+            "mode": "on-demand",
+        },
     }
 
 

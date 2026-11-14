@@ -122,6 +122,20 @@ dialog::backdrop{background:#020A16D9}
 .pill.good{background:#214E48;color:#B5F8E6}
 a{color:#87D9FF}
 #status.bad{color:#FFD4A0;font-weight:700}
+html{background:var(--app-bg)}
+body{max-width:1200px;margin:auto;padding-bottom:100px}
+html{scroll-padding-top:80px}
+.section{scroll-margin-top:80px}
+.quick-nav{display:flex;gap:8px;overflow-x:auto;position:sticky;top:0;z-index:15;background:var(--app-bg);padding:10px 0;margin-bottom:12px}
+.quick-nav a{flex:none;padding:10px 14px;background:var(--lavender);border-radius:9px;text-decoration:none;color:var(--ink)}
+.sync-bar{flex-wrap:wrap;margin-bottom:14px}.sync-bar button{padding:8px 12px}
+.card,.item{overflow-wrap:anywhere;min-width:0}
+.metric{font-size:clamp(20px,3vw,29px)}
+.account-tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.account-tools select{width:auto;margin:0}
+#accountBalances{display:grid;gap:12px}
+#accountBalances .item{padding:12px;border:1px solid var(--border);border-radius:10px}
+#accountBalances button{margin-top:8px}
+@media(min-width:900px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}#accountBalances{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 </style></head>
 <body>
@@ -144,6 +158,11 @@ a{color:#87D9FF}
   <p id="authMessage" class="warn hidden" role="status" aria-live="polite"></p>
  </div>
 </div>
+<main id="dashboardContent" inert>
+<div id="previewNotice" class="warn hidden" role="note">Temporary preview — use fictional records only. Accounts, balances, positions and local backups can be erased when this service sleeps, restarts or redeploys.</div>
+<nav class="quick-nav" aria-label="Dashboard sections"><a href="#overview">Overview</a><a href="#liveFeed">Live odds</a><a href="#accountsSection">Accounts</a><a href="#calculator">Calculator</a><a href="#openSets">Open positions</a><a href="#reportsSection">Reports</a><a href="#recoverySection">Backups</a></nav>
+<div class="row sync-bar" id="overview"><span class="muted" id="lastUpdated" role="status">Waiting for dashboard data…</span><button class="secondary" id="refreshButton" type="button" onclick="refresh()">Refresh dashboard</button></div>
+<div id="dashboardError" class="warn hidden" role="alert"></div>
 <div class="grid">
  <div class="card"><div class="label">Starting bankroll</div><div class="metric" id="bankroll">—</div></div>
  <div class="card"><div class="label">Open exposure</div><div class="metric" id="exposure">—</div></div>
@@ -160,7 +179,7 @@ a{color:#87D9FF}
 </div>
 <div class="card"><b>Settlement buffer</b><div id="bufferSummary" class="muted" role="status">Loading…</div></div>
 <div class="card">
- <div class="row"><b>Scanner status</b><span class="pill" id="status">Connecting</span></div>
+ <div class="row"><b>Dashboard status</b><span class="pill" id="status">Connecting</span></div>
  <p class="muted">Minimum net theoretical ROI: 1.5%. Stakes and exposure are subject to server-side risk limits. The live odds feed is on-demand and provides candidates only. Verify prices, rules, limits, and account availability manually; all bets remain manual.</p>
  <button class="secondary" onclick="enablePush()">Enable iPhone push notifications</button>
 </div>
@@ -170,18 +189,20 @@ a{color:#87D9FF}
   <button class="secondary" id="openVettingButton" type="button" disabled onclick="openVetting()">Open assisted vetting</button>
  </div>
 </div>
-<div class="section">Live odds feed</div>
+<div class="section" id="liveFeed">Live odds feed</div>
 <div class="card">
+ <p id="oddsConnection" class="muted" role="status">Checking odds configuration…</p>
  <p class="muted">Fetch Australian head-to-head odds on demand. A returned opportunity is only a candidate; verify matching rules and current prices manually.</p>
- <button class="secondary" type="button" onclick="loadOddsSports()">Load available sports</button>
+ <button class="secondary" id="loadSportsButton" type="button" onclick="loadOddsSports()" disabled>Load available sports</button>
  <label for="oddsSport">Sport</label><select id="oddsSport"><option value="">Load sports first</option></select>
- <button type="button" onclick="scanLiveOdds()">Scan Australian odds now</button>
+ <button id="liveScanButton" type="button" onclick="scanLiveOdds()" disabled>Scan Australian odds now</button>
  <div id="liveOddsStatus" class="muted" role="status" aria-live="polite"></div>
  <div id="liveOddsResults"></div>
 </div>
-<div class="section">Bookmaker account balances</div>
+<div class="section" id="accountsSection">Bookmaker account balances</div>
+<div class="card account-tools"><label for="accountOwner">Show accounts</label><select id="accountOwner" onchange="renderAccounts(accountsCache)"><option value="">Both owners</option><option>Hunta</option><option>Jay</option></select><span class="muted" id="accountTotal"></span></div>
 <div class="card" id="accountBalances">Loading account balances…</div>
-<div class="section">Test an opportunity</div>
+<div class="section" id="calculator">Test an opportunity</div>
 <div class="card">
  <label>Sport</label><select id="sport"><option>Soccer</option><option>Tennis</option><option>Basketball / NBA</option><option>NRL</option><option>AFL</option><option>Cricket</option></select>
  <label>Event</label><input id="event" value="Demo match — replace with live event">
@@ -191,14 +212,15 @@ a{color:#87D9FF}
  <button style="width:100%;margin-top:8px" onclick="scan()">Calculate opportunity</button>
  <div id="result"></div>
 </div>
-<div class="section">Open sets</div><div class="card" id="sets">Loading…</div>
+<div class="section" id="openSets">Open positions</div><div class="card" id="sets">Loading…</div>
 <div class="section">Recent opportunities</div><div class="card" id="opps">Loading…</div>
 <div class="section">Notifications</div><div class="card" id="notifications" aria-live="polite">Loading notifications…</div>
-<div class="section">Performance and reports</div>
+<div class="section" id="reportsSection">Performance and reports</div>
 <div class="card"><div id="reportSummary" class="muted">Loading report summary…</div><a href="/api/reports/settlements.csv">Download settlement CSV</a></div>
-<div class="section">Backups and recovery</div>
+<div class="section" id="recoverySection">Backups and recovery</div>
 <div class="card"><button class="secondary" type="button" onclick="createBackup()">Create verified backup now</button><div id="backupList" class="muted">Loading backup list…</div><small>Backups are stored on the configured app volume. Schedule off-site copies separately.</small></div>
 <div class="warn">Important: the scanner is a decision-support tool, not a guarantee. Verify identical markets, all outcomes, current odds, account limits and settlement rules. A recorded set does not place bets.</div>
+</main>
 <div class="vetting-dock hidden" id="vettingDock"><button type="button" onclick="openVetting()">Open assisted vetting</button></div>
 <dialog id="vettingDialog" aria-labelledby="vettingTitle">
  <div class="dialog-body">
@@ -294,6 +316,9 @@ function renderReports(report){
 }
 function renderAccounts(rows){
  accountsCache=rows||[];
+ const ownerFilter=document.getElementById('accountOwner').value;
+ rows=accountsCache.filter(a=>!ownerFilter||a.owner===ownerFilter);
+ document.getElementById('accountTotal').textContent=rows.length+' accounts • Recorded total '+aud(rows.reduce((total,a)=>total+Number(a.balance||0),0));
  const target=document.getElementById('accountBalances');
  target.innerHTML=rows.map(function(a){
   const id=Number(a.id),owner=escapeHtml(a.owner),bookmaker=escapeHtml(a.bookmaker),balance=Number(a.balance).toFixed(2);
@@ -365,6 +390,11 @@ async function api(path,opts={}){
  return j
 }
 function showAuthGate(setup){
+ lastOpportunity=null;lastCandidate=null;liveCandidateRows=[];
+ document.getElementById('liveOddsResults').textContent='';
+ document.getElementById('dashboardContent').inert=true;
+ document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());
+ document.getElementById('vettingDock').classList.add('hidden');
  const gate=document.getElementById('authGate');gate.classList.remove('hidden');
  document.getElementById('authControls').classList.add('hidden');
  document.getElementById('loginForm').classList.toggle('hidden',!!setup);
@@ -373,6 +403,7 @@ function showAuthGate(setup){
  document.getElementById('authIntro').textContent=setup?'Enter the one-time setup token from the server environment, then set both passwords.':'Use your Hunta or Jay account to access the dashboard.';
 }
 function showAuthenticated(){
+ document.getElementById('dashboardContent').inert=false;
  document.getElementById('authGate').classList.add('hidden');
  document.getElementById('authControls').classList.remove('hidden');
  document.getElementById('userName').textContent=currentUser.display_name;
@@ -412,7 +443,12 @@ async function startDashboard(){
  await refresh();
  if(currentUser&&!refreshTimer)refreshTimer=setInterval(refresh,15000)
 }
-let refreshInProgress=false, authGeneration=0;
+let refreshInProgress=false, authGeneration=0, oddsConfigured=false, oddsBusy=false;
+function updateOddsControls(){
+ document.getElementById('loadSportsButton').disabled=!oddsConfigured||oddsBusy;
+ document.getElementById('liveScanButton').disabled=!oddsConfigured||oddsBusy||!document.getElementById('oddsSport').value;
+}
+document.getElementById('oddsSport').addEventListener('change',updateOddsControls);
 function aud(value){return new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(Number(value)||0)}
 function renderRiskSummary(d){
  const set=(id,value)=>document.getElementById(id).textContent=value;
@@ -437,6 +473,7 @@ function renderRiskSummary(d){
 async function refresh(){
  if(refreshInProgress||!currentUser)return;
  refreshInProgress=true;
+ document.getElementById('refreshButton').disabled=true;
  const generation=authGeneration;
  try{
   // Keep core risk/position data independent from optional report and backup
@@ -446,6 +483,12 @@ async function refresh(){
   ]);
   if(!currentUser||generation!==authGeneration)return;
   const d=core[1],p=core[2],o=core[3],accountRows=core[4];
+  document.getElementById('previewNotice').classList.toggle('hidden',!core[0].preview_mode);
+  oddsConfigured=!!core[0].odds_feed?.configured;
+  document.getElementById('oddsConnection').textContent=oddsConfigured?'API key configured • Australian head-to-head odds • Connection not verified until a request succeeds.':'Live odds not configured. Add ODDS_API_KEY in the host’s private environment settings, then redeploy.';
+  updateOddsControls();
+  document.getElementById('lastUpdated').textContent='Last dashboard update: '+new Date().toLocaleTimeString('en-AU')+' • Refreshes every 15 seconds';
+  document.getElementById('dashboardError').classList.add('hidden');
   renderRiskSummary(d);
   positionsCache=p;
   renderAccounts(accountRows);
@@ -473,36 +516,53 @@ async function refresh(){
   if(optional[0].status==='fulfilled')renderReports(optional[0].value);
   if(optional[1].status==='fulfilled')renderNotifications(optional[1].value);
   if(optional[2].status==='fulfilled')renderBackups(optional[2].value);
+  const unavailable=['reportSummary','notifications','backupList'];
+  optional.forEach((result,index)=>{if(result.status==='rejected')document.getElementById(unavailable[index]).textContent='Unavailable — retry using Refresh dashboard.'});
   if(!d.new_positions_paused&&optional.some(result=>result.status==='rejected'))
    document.getElementById('status').textContent='API online — some secondary services unavailable';
- }catch(e){if(generation===authGeneration)document.getElementById('status').textContent=!currentUser?'Sign in required':'API unavailable: '+e.message}
- finally{refreshInProgress=false}
+ }catch(e){if(generation===authGeneration){
+  document.getElementById('status').textContent=!currentUser?'Sign in required':'API unavailable';
+  const warning=document.getElementById('dashboardError');
+  warning.textContent='Dashboard refresh failed. Displayed figures may be out of date. '+e.message;
+  warning.classList.remove('hidden');
+ }}
+ finally{refreshInProgress=false;document.getElementById('refreshButton').disabled=false}
 }
 async function loadOddsSports(){
+ if(oddsBusy||!oddsConfigured)return;
+ oddsBusy=true;updateOddsControls();
+ const generation=authGeneration;
  const status=document.getElementById('liveOddsStatus');
  status.textContent='Loading provider sports…';
  try{
   const result=await api('/odds/sports');
+  if(!currentUser||generation!==authGeneration)return;
   const active=(result.sports||[]).filter(function(s){return s.active});
   document.getElementById('oddsSport').innerHTML=active.map(function(s){
    return '<option value="'+escapeHtml(s.key)+'">'+escapeHtml(s.title||s.key)+'</option>';
   }).join('')||'<option value="">No active sports</option>';
   status.textContent='Loaded '+active.length+' active sports. No odds request has been made yet.';
  }catch(e){status.textContent=e.message}
+ finally{oddsBusy=false;updateOddsControls()}
 }
 async function scanLiveOdds(){
+ if(oddsBusy||!oddsConfigured)return;
  const sportKey=document.getElementById('oddsSport').value;
  if(!sportKey){document.getElementById('liveOddsStatus').textContent='Load and select a sport first.';return}
+ oddsBusy=true;updateOddsControls();
+ const generation=authGeneration;
  const status=document.getElementById('liveOddsStatus'),resultsEl=document.getElementById('liveOddsResults');
- status.textContent='Fetching current Australian odds…';resultsEl.textContent='';
+ status.textContent='Fetching current Australian odds…';resultsEl.textContent='';liveCandidateRows=[];
  try{
   const result=await api('/odds/scan/'+encodeURIComponent(sportKey));
+  if(!currentUser||generation!==authGeneration)return;
   liveCandidateRows=result.candidates||[];
-  status.textContent='Checked '+result.events_received+' events; '+result.qualified_count+' qualified candidates. Provider credits remaining: '+(result.quota.requests_remaining??'not reported')+'.';
+  status.textContent='Scan completed '+new Date().toLocaleTimeString('en-AU')+' • Checked '+result.events_received+' events; '+result.qualified_count+' qualified candidates. Provider credits remaining: '+(result.quota?.requests_remaining??'not reported')+'.';
   resultsEl.innerHTML=liveCandidateRows.map(function(row,index){
    return '<div class="item"><b>'+escapeHtml(row.candidate.event)+'</b><div class="muted">'+escapeHtml(row.candidate.market)+' • '+(Number(row.roi)*100).toFixed(2)+'% theoretical ROI • Updated '+escapeHtml(row.source_updated_at)+'</div><button class="secondary" onclick="selectLiveCandidate('+index+')">Review this candidate</button></div>';
   }).join('')||'<small>No fresh qualifying candidates returned. Try again later.</small>';
  }catch(e){status.textContent=e.message}
+ finally{oddsBusy=false;updateOddsControls()}
 }
 function selectLiveCandidate(index){
  const row=liveCandidateRows[index];if(!row)return;

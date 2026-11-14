@@ -1,5 +1,29 @@
 # Deployment handoff
 
+## Current focus: private operator app
+
+Public paid/customer development is paused at the owner's request. The next
+work is the private dashboard, Render hosting and The Odds API connection.
+The dashboard follow-up adds section navigation, responsive account cards,
+owner filtering, refresh timestamps and stale-data warnings, optional-service
+failure messages, odds configuration status and single-flight odds controls.
+
+Render Free has no persistent disk and erases SQLite data on sleep/restart.
+`arb-cloud-iphone/ops/render-free-preview.yaml` therefore prepares a temporary
+authenticated preview with a visible fictional-records notice, not a durable
+financial deployment. The paid disk blueprint is unchanged. See
+`arb-cloud-iphone/ops/RENDER_PREVIEW.md` for creation and private odds-key setup.
+No Render service or real odds-provider connection has been verified by this
+follow-up. Hosting requires the owner's Render connection and a decision on
+the temporary-storage limitation. Do not mark either integration live until
+real-host HTTPS authentication and a real provider request succeed.
+
+Local checks passed: the 187-test regression suite, a separate new config
+privacy test, the localhost fictional settlement/backup smoke, service-worker
+checks, and headless Chromium at 390px and 1440px. Browser checks covered
+setup/sign-in/sign-out, owner filtering, calculator draft preservation, core
+and optional-service outages, and mocked odds sports/scan responses.
+
 The reviewed application is on `main`. The deployment-readiness follow-up adds
 shared authentication/odds request budgets, trusted-proxy origin handling,
 read-only host preflight, and a disposable localhost acceptance check.
