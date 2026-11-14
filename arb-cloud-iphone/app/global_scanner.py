@@ -119,3 +119,78 @@ def reconcile_scan(con, scan_id, actual_points, status):
         "UPDATE global_scan_ledger SET actual_points=?,status=? WHERE id=?",
         (None if actual_points is None else int(actual_points), status, scan_id),
     )
+
+# Trial mode is deliberately fail-closed and persists across server restarts.
+TRIAL_CREDIT_LIMIT = 350
+TRIAL_DURATION_SECONDS = 24 * 3600
+TRIAL_REGIONS = ("au",)
+TRIAL_REQUEST_RESERVATION = 1
+
+
+def trial_status(con, at):
+    """Read or initialize the one-time trial window (never automatically reset)."""
+    con.execute("""CREATE TABLE IF NOT EXISTS global_scan_trial (
+        id INTEGER PRIMARY KEY CHECK (id=1),
+        started_at TEXT NOT NULL,
+        ends_at TEXT NOT NULL,
+        credits_limit INTEGER NOT NULL
+    )""")
+    row = con.execute(
+        "SELECT started_at,ends_at,credits_limit FROM global_scan_trial WHERE id=1"
+    ).fetchone()
+    if row is None:
+        from datetime import timedelta
+        started, ends = at, at + timedelta(seconds=TRIAL_DURATION_SECONDS)
+        con.execute(
+            "INSERT INTO global_scan_trial(id,started_at,ends_at,credits_limit) VALUES (1,?,?,?)",
+            (started.isoformat(), ends.isoformat(), TRIAL_CREDIT_LIMIT),
+        )
+    else:
+        started, ends = datetime.fromisoformat(row[0]), datetime.fromisoformat(row[1])
+    used = con.execute(
+        "SELECT COALESCE(SUM(MAX(reserved_points, COALESCE(actual_points,0))),0) "
+        "FROM global_scan_ledger WHERE requested_at>=? AND requested_at<?",
+        (started.isoformat(), ends.isoformat()),
+    ).fetchone()[0]
+    return {
+        "started_at": started.isoformat(),
+        "ends_at": ends.isoformat(),
+        "used": used,
+        "remaining": max(0, TRIAL_CREDIT_LIMIT-used),
+        "active": started <= at < ends,
+        "limit": TRIAL_CREDIT_LIMIT,
+    }
+
+
+def reserve_trial_scan(con, sport_key, at):
+    """Caller holds SQLite BEGIN IMMEDIATE; reserve before provider request."""
+    if not KEY_PATTERN.fullmatch(sport_key):
+        raise ValueError("Invalid competition key")
+    con.execute("""CREATE TABLE IF NOT EXISTS global_scan_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        week_start TEXT NOT NULL,
+        sport_key TEXT NOT NULL,
+        requested_at TEXT NOT NULL,
+        reserved_points INTEGER NOT NULL,
+        actual_points INTEGER,
+        status TEXT NOT NULL
+    )""")
+    state = trial_status(con, at)
+    if not state["active"]:
+        return None, "trial_expired"
+    if state["remaining"] < TRIAL_REQUEST_RESERVATION:
+        return None, "trial_budget_exhausted"
+    from datetime import timedelta
+    last = con.execute(
+        "SELECT requested_at FROM global_scan_ledger WHERE sport_key=? "
+        "AND requested_at>=? ORDER BY id DESC LIMIT 1",
+        (sport_key, state["started_at"]),
+    ).fetchone()
+    if last and at-datetime.fromisoformat(last[0]) < timedelta(minutes=SCAN_CONFIG["minimum_repeat_interval_minutes"]):
+        return None, "cooldown"
+    cursor = con.execute(
+        "INSERT INTO global_scan_ledger(week_start,sport_key,requested_at,reserved_points,status) "
+        "VALUES (?,?,?,?,?)",
+        (billing_week_start(at).isoformat(), sport_key, at.isoformat(), TRIAL_REQUEST_RESERVATION, "trial_reserved"),
+    )
+    return cursor.lastrowid, None
