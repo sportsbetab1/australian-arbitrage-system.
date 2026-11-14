@@ -199,7 +199,7 @@ AUTH_PUBLIC_PATHS = {
 
 DASHBOARD_PAGE_PATHS = {
     "/", "/dashboard", "/positions", "/settlements", "/accounts",
-    "/scanner", "/analytics", "/settings", "/notifications",
+    "/scanner", "/analytics", "/settings", "/notifications", "/buffer",
 }
 
 
@@ -937,6 +937,7 @@ def startup():
 @app.get("/analytics", include_in_schema=False)
 @app.get("/settings", include_in_schema=False)
 @app.get("/notifications", include_in_schema=False)
+@app.get("/buffer", include_in_schema=False)
 def home():
     return FileResponse("static/index.html")
 
@@ -2067,6 +2068,7 @@ def mark_notification_read(notification_id: int, request: Request):
 
 @app.get("/api/reports/summary")
 def reports_summary():
+    report_now = now()
     with closing(db()) as con, con:
         totals = con.execute("""
             SELECT
@@ -2098,12 +2100,23 @@ def reports_summary():
             ORDER BY month DESC
         """).fetchall()
 
+        daily = con.execute("""
+            SELECT date(settled_at) AS day, COUNT(*) AS positions,
+                   ROUND(COALESCE(SUM(actual_pnl), 0), 2) AS net_pnl
+            FROM positions
+            WHERE status = 'Settled' AND date(settled_at) BETWEEN ? AND ?
+            GROUP BY date(settled_at) ORDER BY day
+        """, ((report_now - timedelta(days=29)).date().isoformat(),
+              report_now.date().isoformat())).fetchall()
+
     return {
         "positions": dict(totals),
         "commission_paid": round(float(commissions), 2),
         "reinvested": round(float(allocations["reinvested"]), 2),
         "withdrawn": round(float(allocations["withdrawn"]), 2),
         "monthly": [dict(row) for row in months],
+        "daily": [dict(row) for row in daily],
+        "as_of": report_now.isoformat(),
     }
 
 

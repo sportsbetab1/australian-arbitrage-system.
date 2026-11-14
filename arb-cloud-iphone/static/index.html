@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#131a43"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/static/icon-192.png"><title>Australian Arbitrage Control</title><link rel="stylesheet" href="/static/dashboard.css"></head><body><svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10 12 3l9 7v11h-6v-7H9v7H3Z"/></symbol><symbol id="i-positions" viewBox="0 0 24 24"><path d="M4 4h16v16H4z M8 1v6 M16 1v6 M8 12h8 M8 16h5"/></symbol><symbol id="i-settlements" viewBox="0 0 24 24"><path d="M5 3h14v18H5z M8 8h8 M8 12h8 M8 16l2 2 5-5"/></symbol><symbol id="i-accounts" viewBox="0 0 24 24"><path d="M3 7h18v14H3z M3 7l13-5v5 M15 12h6v5h-6z"/></symbol><symbol id="i-scan" viewBox="0 0 24 24"><path d="M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6 M7 10h6 M10 7v6"/></symbol><symbol id="i-analytics" viewBox="0 0 24 24"><path d="M4 20V9 M10 20V4 M16 20v-7 M22 20H2"/></symbol><symbol id="i-settings" viewBox="0 0 24 24"><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6"/></symbol><symbol id="i-bell" viewBox="0 0 24 24"><path d="M5 17h14l-2-4V9a5 5 0 0 0-10 0v4z M10 21h4"/></symbol><symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 4H3v16h6 M12 12h9 M17 8l4 4-4 4"/></symbol><symbol id="i-bank" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5z M5 11v6 M10 11v6 M15 11v6 M20 11v6 M2 21h20 M3 18h18"/></symbol><symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6z M8 12l3 3 5-6"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><path d="M5 10h14v12H5z M8 10V6a4 4 0 0 1 8 0v4 M12 15v3"/></symbol><symbol id="i-users" viewBox="0 0 24 24"><path d="M8 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M2 21v-3a6 6 0 0 1 12 0v3 M16 4a4 4 0 0 1 0 8 M18 15a5 5 0 0 1 4 5"/></symbol><symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7a9 9 0 0 0-15-1L2 9 M2 3v6h6 M4 17a9 9 0 0 0 15 1l3-3 M22 21v-6h-6"/></symbol><symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14 M14 7l5 5-5 5"/></symbol><symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol><symbol id="i-fingerprint" viewBox="0 0 24 24"><path d="M5 17c-1-3-1-8 2-11s8-3 11 0 3 7 2 11 M8 19c-2-5-2-9 1-11s7 0 7 4-1 7-2 9 M11 22c-2-4-3-8-1-10s3 0 3 3-1 4 0 7"/></symbol><symbol id="i-more" viewBox="0 0 24 24"><path d="M5 11h1v1H5z M11 11h1v1h-1z M17 11h1v1h-1z"/></symbol></defs></svg><div class="auth-gate hidden" id="authGate">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#131a43"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/static/icon-192.png"><title>Australian Arbitrage Control</title><link rel="stylesheet" href="/static/dashboard.css"></head><body><svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10 12 3l9 7v11h-6v-7H9v7H3Z"/></symbol><symbol id="i-positions" viewBox="0 0 24 24"><path d="M4 4h16v16H4z M8 1v6 M16 1v6 M8 12h8 M8 16h5"/></symbol><symbol id="i-settlements" viewBox="0 0 24 24"><path d="M5 3h14v18H5z M8 8h8 M8 12h8 M8 16l2 2 5-5"/></symbol><symbol id="i-accounts" viewBox="0 0 24 24"><path d="M3 7h18v14H3z M3 7l13-5v5 M15 12h6v5h-6z"/></symbol><symbol id="i-scan" viewBox="0 0 24 24"><path d="M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6 M7 10h6 M10 7v6"/></symbol><symbol id="i-analytics" viewBox="0 0 24 24"><path d="M4 20V9 M10 20V4 M16 20v-7 M22 20H2"/></symbol><symbol id="i-settings" viewBox="0 0 24 24"><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6"/></symbol><symbol id="i-bell" viewBox="0 0 24 24"><path d="M5 17h14l-2-4V9a5 5 0 0 0-10 0v4z M10 21h4"/></symbol><symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 4H3v16h6 M12 12h9 M17 8l4 4-4 4"/></symbol><symbol id="i-bank" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5z M5 11v6 M10 11v6 M15 11v6 M20 11v6 M2 21h20 M3 18h18"/></symbol><symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6z M8 12l3 3 5-6"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><path d="M5 10h14v12H5z M8 10V6a4 4 0 0 1 8 0v4 M12 15v3"/></symbol><symbol id="i-users" viewBox="0 0 24 24"><path d="M8 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M2 21v-3a6 6 0 0 1 12 0v3 M16 4a4 4 0 0 1 0 8 M18 15a5 5 0 0 1 4 5"/></symbol><symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7a9 9 0 0 0-15-1L2 9 M2 3v6h6 M4 17a9 9 0 0 0 15 1l3-3 M22 21v-6h-6"/></symbol><symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14 M14 7l5 5-5 5"/></symbol><symbol id="i-check" viewBox="0 0 24 24"><path d="M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0 M7 12l3 3 7-7"/></symbol><symbol id="i-fingerprint" viewBox="0 0 24 24"><path d="M5 17c-1-3-1-8 2-11s8-3 11 0 3 7 2 11 M8 19c-2-5-2-9 1-11s7 0 7 4-1 7-2 9 M11 22c-2-4-3-8-1-10s3 0 3 3-1 4 0 7"/></symbol><symbol id="i-more" viewBox="0 0 24 24"><path d="M4 6h16 M4 12h16 M4 18h16"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 4v16 M4 12h16"/></symbol><symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7z M2 12l10 5 10-5 M2 17l10 5 10-5"/></symbol><symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 22V3 M4 3h14v9H4"/></symbol><symbol id="i-target" viewBox="0 0 24 24"><path d="M4 8V4h4 M16 4h4v4 M20 16v4h-4 M8 20H4v-4 M8 12h8 M12 8v8"/></symbol><symbol id="i-gauge" viewBox="0 0 24 24"><path d="M3 19a10 10 0 1 1 18 0 M12 13l6-6 M4 19h16"/></symbol></defs></svg><div class="auth-gate hidden" id="authGate">
  <div class="card auth-panel">
   <h2 id="authTitle">Sign in</h2>
   <p class="muted" id="authIntro">Use your Hunta or Jay account to access the dashboard.</p>
@@ -25,37 +25,37 @@
 </div>
 
 <div id="dashboardContent" class="app-shell" inert>
-<aside class="sidebar" aria-label="Main navigation">
- <a class="brand" href="/dashboard" data-page="overview"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 60 60"><defs><linearGradient id="brandGradient" x2="1" y2="1"><stop stop-color="#30ffe3"/><stop offset="1" stop-color="#7761ff"/></linearGradient></defs><path d="M30 3 56 51H42L30 28 17 51H3Z" fill="url(#brandGradient)"/><path d="m30 3 7 14-20 34H3Z" fill="#23d9e7"/><path d="m30 32 10 19H20Z" fill="#91a9ff"/></svg></span><span>AUSTRALIAN<br>ARBITRAGE<br>CONTROL</span></a>
- <nav class="primary-nav"><a href="/dashboard" data-page="overview" class="nav-link nav-overview"><svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg><span>Dashboard</span></a><a href="/positions" data-page="positions" class="nav-link nav-positions"><svg class="icon" aria-hidden="true"><use href="#i-positions"></use></svg><span>Positions</span></a><a href="/settlements" data-page="settlements" class="nav-link nav-settlements"><svg class="icon" aria-hidden="true"><use href="#i-settlements"></use></svg><span>Settlements</span></a><a href="/accounts" data-page="accounts" class="nav-link nav-accounts"><svg class="icon" aria-hidden="true"><use href="#i-accounts"></use></svg><span>Accounts</span></a><a href="/scanner" data-page="scanner" class="nav-link nav-scanner"><svg class="icon" aria-hidden="true"><use href="#i-scan"></use></svg><span>Scanner</span></a><a href="/analytics" data-page="analytics" class="nav-link nav-analytics"><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg><span>Analytics</span></a><a href="/settings" data-page="settings" class="nav-link nav-settings"><svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg><span>Settings</span></a><a href="/notifications" data-page="notifications" class="nav-link nav-notifications"><svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg><span>Notifications</span><span id="notificationBadge" class="nav-badge hidden"></span></a><button class="nav-link mobile-more" type="button" data-page="settings"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg><span>More</span></button><button class="nav-link nav-logout" type="button" onclick="logout()"><svg class="icon" aria-hidden="true"><use href="#i-logout"></use></svg><span>Logout</span></button></nav>
- <div class="sidebar-bottom"><div class="online-label"><span class="status-dot"></span><span id="sidebarStatus">Connecting</span></div><small>Private operator workspace</small><small id="localDate"></small></div>
-</aside>
 <div class="workspace">
- <header class="app-header"><div><h1 id="screenTitle">Dashboard</h1><p id="screenSubtitle">Australian Arbitrage Control</p></div><div class="header-actions"><span class="connection-pill" id="connectionBadge"><span class="status-dot"></span><span id="connectionLabel">Connecting</span></span><div id="authControls" class="row hidden"><button class="profile-button" type="button" data-page="settings" aria-label="Open profile and settings"><span id="userInitials">H</span><span id="userName"></span><span aria-hidden="true">⌄</span></button></div></div></header>
- <div id="previewNotice" class="warn hidden" role="note">Temporary preview · Fictional records only. Saved data can be erased on sleep, restart or redeploy.</div>
+<header class="app-header"><a class="header-brand" href="/dashboard" data-page="overview"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 60 60"><defs><linearGradient id="brandGradient" x2="1" y2="1"><stop stop-color="#30ffe3"/><stop offset="1" stop-color="#7761ff"/></linearGradient></defs><path d="M30 3 56 51H42L30 28 17 51H3Z" fill="url(#brandGradient)"/><path d="m30 3 7 14-20 34H3Z" fill="#23d9e7"/><path d="m30 32 10 19H20Z" fill="#91a9ff"/></svg></span><span>Australian Arbitrage Control</span></a><div class="header-actions"><span class="connection-pill" id="connectionBadge"><span class="status-dot"></span><span id="connectionLabel">Connecting</span></span><a class="header-icon notification-link" href="/notifications" data-page="notifications" aria-label="Open notifications"><svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg><span id="notificationBadge" class="notification-badge hidden"></span></a><div id="authControls" class="hidden"><button class="header-icon profile-button" type="button" data-page="settings" aria-label="Open profile and settings"><svg class="icon" aria-hidden="true"><use href="#i-users"></use></svg><span id="userInitials" class="sr-only">H</span><span id="userName" class="sr-only"></span></button></div></div></header>
+<h1 id="screenTitle" class="sr-only">Dashboard</h1><p id="screenSubtitle" class="sr-only">Australian Arbitrage Control</p>
+<nav class="primary-nav" aria-label="Main navigation"><a href="/dashboard" data-page="overview" class="nav-link nav-overview"><svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg><span>Dashboard</span></a><a href="/scanner" data-page="scanner" class="nav-link nav-scanner"><svg class="icon" aria-hidden="true"><use href="#i-scan"></use></svg><span>Scanner</span></a><a href="/positions" data-page="positions" class="nav-link nav-positions"><svg class="icon" aria-hidden="true"><use href="#i-layers"></use></svg><span>Positions</span></a><a href="/accounts" data-page="accounts" class="nav-link nav-accounts"><svg class="icon" aria-hidden="true"><use href="#i-users"></use></svg><span>Accounts</span></a><a href="/buffer" data-page="buffer" class="nav-link nav-buffer"><svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg><span>Buffer</span></a><a href="/settings" data-page="settings" class="nav-link nav-settings mobile-more"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg><span>More</span></a></nav>
+ <div id="previewNotice" class="warn hidden" role="note">Preview · Fictional records only. Saved data resets on restart.</div>
  <div class="sync-bar"><span id="lastUpdated" class="muted" role="status">Waiting for dashboard data…</span><button class="icon-button" id="refreshButton" type="button" onclick="refresh()" aria-label="Refresh dashboard"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg></button></div>
  <div id="dashboardError" class="warn hidden" role="alert"></div>
  <main>
  <section data-view="overview" aria-label="Dashboard">
   <div class="summary-grid">
-   <article class="summary-card cyan"><svg class="icon" aria-hidden="true"><use href="#i-bank"></use></svg><div class="label">Starting Bankroll</div><div class="metric" id="bankroll">—</div><small>AUD · Initial capital</small></article>
-   <article class="summary-card indigo"><svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg><div class="label">Max Exposure</div><div class="metric" id="maximumExposure">—</div><small>75% of starting bankroll</small></article>
-   <article class="summary-card violet"><svg class="icon" aria-hidden="true"><use href="#i-lock"></use></svg><div class="label">Protected Reserve</div><div class="metric" id="reservePercent">—</div><small id="protectedReserve">—</small></article>
-   <article class="summary-card mint"><svg class="icon" aria-hidden="true"><use href="#i-users"></use></svg><div class="label">Bookmaker Accounts</div><div class="metric" id="bookmakerAccountCount">—</div><small>Recorded accounts · No bookmaker connection</small></article>
+   <article class="summary-card cyan"><svg class="icon" aria-hidden="true"><use href="#i-bank"></use></svg><div class="label">Starting<br> Bankroll</div><div class="metric" id="bankroll">—</div></article>
+   <article class="summary-card indigo"><svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg><div class="label">Max<br> Exposure</div><div class="metric" id="maximumExposure">—</div></article>
+   <article class="summary-card violet"><svg class="icon" aria-hidden="true"><use href="#i-lock"></use></svg><div class="label">Protected<br> Reserve</div><div class="metric" id="reservePercent">—</div><small id="protectedReserve">—</small></article>
+   <article class="summary-card mint"><svg class="icon" aria-hidden="true"><use href="#i-users"></use></svg><div class="label">Bookmaker<br> Accounts</div><div class="metric" id="bookmakerAccountCount">—</div></article>
   </div>
   <div class="dashboard-grid">
-   <article class="card performance-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg>Portfolio Performance</h2><span class="subtle-pill">All time</span></div><div class="portfolio-value" id="realisedProfit">—</div><div class="muted chart-caption">Realised P/L · cumulative by settled month</div><div id="performanceChart" class="performance-chart"><div class="empty-state">Loading performance history…</div></div></article>
-   <article class="card scanner-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"></use></svg>Live Arbitrage Scanner</h2><span id="scannerBadge" class="subtle-pill">On demand</span></div><button class="radar" type="button" data-page="scanner" aria-label="Open odds scanner"><span class="radar-ring ring-one"></span><span class="radar-ring ring-two"></span><span class="radar-ring ring-three"></span><span class="radar-cross"></span><span class="radar-dot"></span></button><strong id="scannerSummary">Checking configuration…</strong><p id="scannerDetail" class="muted">Scans run when you request them.</p><button class="text-button" type="button" data-page="scanner">Open scanner <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></button></article>
-   <article class="card buffer-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-accounts"></use></svg>Available Funds</h2></div><div class="large-value" id="bufferAvailable">—</div><p class="muted">Settlement buffer</p><div class="progress-track"><span id="bufferProgress"></span></div><p id="bufferSummary" class="muted" role="status">Loading…</p></article>
-   <article class="card allocation-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>Profit Allocation</h2></div><div class="large-value" id="allocationRatio">—</div><p class="muted">Retain / Withdraw · positive settled profit</p><div class="allocation-track"><span id="retainShare">—</span><span id="withdrawShare">—</span></div><div class="allocation-totals"><span>Reinvested <b id="reinvestedProfit">—</b></span><span>Withdrawals <b id="withdrawalAllocation">—</b></span></div></article>
-   <article class="card system-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>System Status</h2></div><ul class="system-list"><li><span class="status-dot"></span><span id="accountSystemStatus">Loading account inventory…</span></li><li><span class="status-dot" id="oddsStatusDot"></span><span id="oddsSystemStatus">Checking feed configuration…</span></li><li><span class="status-dot" id="riskStatusDot"></span><span id="status" role="status">Connecting</span></li><li><span class="status-dot" id="pushStatusDot"></span><span id="pushSystemStatus">Push not checked on this device</span></li></ul></article>
-   <article class="card overview-positions"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-positions"></use></svg>Open Positions</h2><button class="text-button" type="button" data-page="positions">View all <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></button></div><div id="positionsPreview" class="table-scroll"><div class="empty-state">Loading positions…</div></div></article>
-   <article class="card overview-notifications"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg>Recent Notifications</h2><button class="text-button" type="button" data-page="notifications">View all</button></div><div id="notificationsPreview"><div class="empty-state">Loading notifications…</div></div></article>
+   <article class="card performance-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg>Portfolio Performance</h2><label for="performancePeriod" class="sr-only">Performance period</label><select id="performancePeriod" class="period-select"><option value="7">Last 7 Days</option><option value="30">Last 30 Days</option><option value="all">All Time</option></select></div><div class="performance-values"><div class="portfolio-value" id="portfolioProfit">—</div><span id="portfolioReturn" class="return-pill" title="Selected-period realised P/L divided by starting bankroll">—</span></div><div id="performanceChart" class="performance-chart"><div class="empty-state">Loading performance…</div></div><span id="performanceCaption" class="sr-only">Cumulative realised P/L for the selected period, using UTC dates.</span></article>
+
+   <article class="card buffer-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-accounts"></use></svg>Available Funds</h2></div><div class="large-value" id="bufferAvailable">—</div><p class="muted">Trading buffer</p><div class="progress-track"><span id="bufferProgress"></span></div></article>
+   <article class="card allocation-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>Profit Allocation</h2></div><div class="large-value" id="allocationRatio">—</div><p class="muted">Reinvest / Withdraw</p><div class="allocation-track"><span id="retainShare">—</span><span id="withdrawShare">—</span></div></article>
+
+   <article class="card exposure-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-layers"></use></svg>Open Exposure</h2></div><div class="large-value" id="exposure">—</div><p class="muted" id="exposureDetail">—</p><div class="progress-track green"><span id="exposureProgress"></span></div></article>
+   <article class="card remaining-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-gauge"></use></svg>Remaining Exposure</h2></div><div class="large-value" id="capacity">—</div><p class="muted" id="remainingDetail">—</p><div class="progress-track green"><span id="remainingProgress"></span></div></article>
+   <article class="card key-metrics"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg>Key Metrics</h2></div><div class="key-metrics-grid"><div><span>Open Positions</span><b id="active">—</b></div><div><span>Settled</span><b id="settledPositions">—</b></div><div><span>Realised P/L</span><b id="realisedProfit">—</b></div><div><span>Reinvested</span><b id="reinvestedProfit">—</b></div><div><span>Withdrawals</span><b id="withdrawalAllocation">—</b></div></div></article>
+   <article class="card overview-positions"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-positions"></use></svg>Open Positions <span id="openPositionCount"></span></h2><button class="text-button" type="button" data-page="positions">View all <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></button></div><div id="positionsPreview" class="table-scroll"><div class="empty-state">Loading positions…</div></div></article>
+
   </div>
-  <div class="exposure-strip"><div><span class="label">Open exposure</span><b id="exposure">—</b></div><div><span class="label">Available capacity</span><b id="capacity">—</b></div><div><span class="label">Open positions</span><b id="active">—</b></div><div><span class="label">Settled positions</span><b id="settledPositions">—</b></div></div>
- </section>
+</section>
  <section data-view="scanner" class="hidden" aria-label="Odds scanner">
   <div class="page-intro"><span class="eyebrow">FIND & REVIEW</span><h2>Your next opportunity starts here.</h2><p class="muted">Australian head-to-head markets. Minimum net theoretical ROI: 1.5%. All bets remain manual.</p></div>
+     <article class="card scanner-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"></use></svg>Live Arbitrage Scanner</h2><span id="scannerBadge" class="subtle-pill">On demand</span></div><button class="radar" type="button" data-page="scanner" aria-label="Open odds scanner"><span class="radar-ring ring-one"></span><span class="radar-ring ring-two"></span><span class="radar-ring ring-three"></span><span class="radar-cross"></span><span class="radar-dot"></span></button><strong id="scannerSummary">Checking configuration…</strong><p id="scannerDetail" class="muted">Scans run when you request them.</p><button class="text-button" type="button" data-page="scanner">Open scanner <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></button></article>
   <div class="two-column"><article class="card" id="liveFeed"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"></use></svg>Live odds feed</h2><span class="subtle-pill">On demand</span></div><p id="oddsConnection" class="muted" role="status">Checking odds configuration…</p><button class="secondary" id="loadSportsButton" type="button" onclick="loadOddsSports()" disabled>Load available sports</button><label for="oddsSport">Sport</label><select id="oddsSport"><option value="">Load sports first</option></select><button id="liveScanButton" type="button" onclick="scanLiveOdds()" disabled>Scan Australian odds now</button><p id="liveOddsStatus" class="muted" role="status" aria-live="polite"></p><div id="liveOddsResults"></div></article>
   <article class="card" id="calculator"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg>Opportunity calculator</h2></div><label for="sport">Sport</label><select id="sport"><option>Soccer</option><option>Tennis</option><option>Basketball / NBA</option><option>NRL</option><option>AFL</option><option>Cricket</option></select><label for="event">Event</label><input id="event" placeholder="Enter the event name"><label for="market">Market</label><input id="market" placeholder="Match winner — verify rules"><div id="legs"></div><div class="button-row"><button class="secondary" type="button" onclick="addLeg()">Add outcome</button><button type="button" onclick="scan()">Calculate opportunity</button></div><div id="result" aria-live="polite"></div></article></div>
   <article class="card vetting-card"><div class="card-head"><div><h2><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>Assisted vetting</h2><p class="muted" id="vettingStatus" aria-live="polite">Run a qualifying scan to open the review checklist.</p></div><button class="secondary" id="openVettingButton" type="button" disabled onclick="openVetting()">Open assisted vetting</button></div></article>
@@ -63,12 +63,14 @@
  </section>
  <section data-view="positions" class="hidden" aria-label="Open positions"><div class="page-intro"><span class="eyebrow">MANAGE EXPOSURE</span><h2>Open positions</h2><p class="muted">Record accepted legs, full cashouts and final settlements.</p></div><article class="card" id="sets">Loading…</article><div class="section">Recent opportunities</div><article class="card" id="opps">Loading…</article></section>
  <section data-view="settlements" class="hidden" aria-label="Settlements"><div class="page-intro"><span class="eyebrow">CLOSED POSITIONS</span><h2>Settlement history</h2><p class="muted">Actual recorded returns, after commission.</p></div><article class="card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-settlements"></use></svg>Recent settlements</h2><a class="subtle-pill" href="/api/reports/settlements.csv">Download all as CSV</a></div><div id="settlementsList" class="table-scroll">Loading…</div><small>Shows settlements among the latest 200 recorded positions. Export the CSV for full history.</small></article></section>
+ <section data-view="buffer" class="hidden" aria-label="Settlement buffer"><div class="page-intro"><span class="eyebrow">MANAGE YOUR BUFFER</span><h2>Settlement buffer</h2><p id="bufferSummary" class="muted" role="status">Loading…</p></div><article class="card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>Recent commitments</h2></div><div id="bufferEntries">Loading…</div><small>Recent 100 entries. Overdue commitments pause new positions.</small></article></section>
  <section data-view="accounts" class="hidden" aria-label="Bookmaker accounts"><div class="page-intro"><span class="eyebrow">YOUR BOOKMAKER LEDGER</span><h2>Every account, in one place.</h2><p class="muted">Manually recorded balances. This app does not connect to bookmaker accounts.</p></div><article class="card account-tools"><div><label for="accountOwner">Show accounts</label><select id="accountOwner" onchange="renderAccounts(accountsCache)"><option value="">Both owners</option><option>Hunta</option><option>Jay</option></select></div><span class="muted" id="accountTotal"></span></article><div id="accountBalances" class="account-grid">Loading account balances…</div></section>
  <section data-view="analytics" class="hidden" aria-label="Analytics"><div class="page-intro"><span class="eyebrow">MEASURE YOUR PROGRESS</span><h2>Performance & reports</h2></div><article class="card"><h2><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg>Portfolio summary</h2><p id="reportSummary" class="muted">Loading report summary…</p><a class="action-link" href="/api/reports/settlements.csv">Download settlement CSV <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a></article></section>
  <section data-view="notifications" class="hidden" aria-label="Notifications"><div class="page-intro"><span class="eyebrow">STAY INFORMED</span><h2>Notifications</h2></div><article class="card" id="notifications" aria-live="polite">Loading notifications…</article></section>
- <section data-view="settings" class="hidden" aria-label="Settings"><div class="page-intro"><span class="eyebrow">YOUR PRIVATE WORKSPACE</span><h2>Settings & tools</h2></div><div class="tool-links"><button class="secondary" data-page="settlements"><svg class="icon" aria-hidden="true"><use href="#i-settlements"></use></svg>Settlements</button><button class="secondary" data-page="analytics"><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg>Analytics</button><button class="secondary" data-page="notifications"><svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg>Notifications</button></div><div class="two-column"><article class="card"><h2><svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg>Phone notifications</h2><p class="muted">On iPhone, add this site to your Home Screen and open it there to enable push.</p><button class="secondary" type="button" onclick="enablePush()">Enable iPhone push notifications</button></article><article class="card" id="recoverySection"><h2><svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>Backups & recovery</h2><p class="muted">Snapshots are stored on the app volume. Off-site copies must be scheduled separately.</p><button class="secondary" type="button" onclick="createBackup()">Create verified backup now</button><div id="backupList" class="muted">Loading backup list…</div></article></div><article class="card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-lock"></use></svg>Private operator access</h2><button class="secondary" type="button" onclick="logout()">Sign out</button></div><p class="muted">Hunta is set up first. Jay can create his own login later from the sign-in screen using the private setup token.</p><span class="subtle-pill">MANUAL BETTING</span></article></section>
+ <section data-view="settings" class="hidden" aria-label="Settings">   <article class="card system-card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>System Status</h2></div><ul class="system-list"><li><span class="status-dot"></span><span id="accountSystemStatus">Loading account inventory…</span></li><li><span class="status-dot" id="oddsStatusDot"></span><span id="oddsSystemStatus">Checking feed configuration…</span></li><li><span class="status-dot" id="riskStatusDot"></span><span id="status" role="status">Connecting</span></li><li><span class="status-dot" id="pushStatusDot"></span><span id="pushSystemStatus">Push not checked on this device</span></li></ul></article>   <article class="card overview-notifications"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg>Recent Notifications</h2><button class="text-button" type="button" data-page="notifications">View all</button></div><div id="notificationsPreview"><div class="empty-state">Loading notifications…</div></div></article><div class="page-intro"><span class="eyebrow">YOUR PRIVATE WORKSPACE</span><h2>Settings & tools</h2></div><div class="tool-links"><a class="secondary nav-settlements" href="/settlements" data-page="settlements"><svg class="icon" aria-hidden="true"><use href="#i-settlements"></use></svg>Settlements</a><a class="secondary nav-analytics" href="/analytics" data-page="analytics"><svg class="icon" aria-hidden="true"><use href="#i-analytics"></use></svg>Analytics</a><a class="secondary nav-notifications" href="/notifications" data-page="notifications"><svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg>Notifications</a></div><div class="two-column"><article class="card"><h2><svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg>Phone notifications</h2><p class="muted">On iPhone, add this site to your Home Screen and open it there to enable push.</p><button class="secondary" type="button" onclick="enablePush()">Enable iPhone push notifications</button></article><article class="card" id="recoverySection"><h2><svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>Backups & recovery</h2><p class="muted">Snapshots are stored on the app volume. Off-site copies must be scheduled separately.</p><button class="secondary" type="button" onclick="createBackup()">Create verified backup now</button><div id="backupList" class="muted">Loading backup list…</div></article></div><article class="card"><div class="card-head"><h2><svg class="icon" aria-hidden="true"><use href="#i-lock"></use></svg>Private operator access</h2><button class="secondary" type="button" onclick="logout()">Sign out</button></div><p class="muted">Hunta is set up first. Jay can create his own login later from the sign-in screen using the private setup token.</p><span class="subtle-pill">MANUAL BETTING</span></article></section>
  </main>
- <footer class="app-footer"><span>AUSTRALIAN ARBITRAGE CONTROL</span><span>Manual execution. Informed decisions.</span></footer>
+<nav class="quick-actions" aria-label="Position actions"><button class="scan-action" type="button" onclick="openQuickAction('scan')"><svg class="icon" aria-hidden="true"><use href="#i-target"></use></svg><span>Scan Markets</span></button><button type="button" onclick="openQuickAction('draft')"><svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg><span>New Draft</span></button><button id="quickConfirm" type="button" onclick="openVetting()" disabled title="Select a qualifying candidate to confirm"><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg><span>Confirm</span></button><button type="button" onclick="openQuickAction('settle')"><svg class="icon" aria-hidden="true"><use href="#i-flag"></use></svg><span>Settle</span></button></nav>
+ <footer class="app-footer"><span id="sidebarStatus">Connecting</span><span id="localDate"></span><span>MANUAL BETTING</span></footer>
 </div></div>
 <div class="vetting-dock hidden" id="vettingDock"><button type="button" onclick="openVetting()">Open assisted vetting</button></div>
 <dialog id="vettingDialog" aria-labelledby="vettingTitle">
@@ -116,8 +118,9 @@
  </div>
 </dialog>
 <script>
-const pageTitles={overview:['Dashboard','Australian Arbitrage Control'],positions:['Positions','Manage your open exposure'],settlements:['Settlements','Your recorded returns'],accounts:['Accounts','Your bookmaker ledger'],scanner:['Scanner','Find and review opportunities'],analytics:['Analytics','Understand your performance'],notifications:['Notifications','Your latest account activity'],settings:['Settings','Your private workspace']};
-const pagePaths={overview:'/dashboard',positions:'/positions',settlements:'/settlements',accounts:'/accounts',scanner:'/scanner',analytics:'/analytics',notifications:'/notifications',settings:'/settings'};
+let performanceReport=null, startingCapital=0;
+const pageTitles={overview:['Dashboard','Australian Arbitrage Control'],positions:['Positions','Manage your open exposure'],settlements:['Settlements','Your recorded returns'],accounts:['Accounts','Your bookmaker ledger'],scanner:['Scanner','Find and review opportunities'],buffer:['Buffer','Settlement buffer commitments'],analytics:['Analytics','Understand your performance'],notifications:['Notifications','Your latest account activity'],settings:['Settings','Your private workspace']};
+const pagePaths={overview:'/dashboard',positions:'/positions',settlements:'/settlements',accounts:'/accounts',scanner:'/scanner',buffer:'/buffer',analytics:'/analytics',notifications:'/notifications',settings:'/settings'};
 function pageFromLocation(){
  return Object.keys(pagePaths).find(page=>pagePaths[page]===location.pathname)||(location.pathname==='/'?location.hash.slice(1):'overview');
 }
@@ -129,6 +132,7 @@ function showPage(page,updateUrl=true){
  if(['settings','analytics','settlements','notifications'].includes(page))more.setAttribute('aria-current','page');
  document.getElementById('screenTitle').textContent=pageTitles[page][0];
  document.getElementById('screenSubtitle').textContent=pageTitles[page][1];
+ if(page==='overview'&&performanceReport)requestAnimationFrame(()=>renderPortfolioChart());
  if(updateUrl){if(location.pathname+location.hash!==pagePaths[page])history.pushState(null,'',pagePaths[page]);window.scrollTo({top:0,behavior:'instant'})}
 }
 document.addEventListener('click',function(event){
@@ -146,28 +150,50 @@ function setConnection(healthy,label){
  document.getElementById('sidebarStatus').textContent=healthy?'System online':'Check connection';
  document.querySelector('#connectionBadge .status-dot').classList.toggle('warning',!healthy);
 }
-function renderPortfolioChart(monthly){
+function renderPortfolioChart(report=performanceReport){
+ performanceReport=report;
  const target=document.getElementById('performanceChart');
- const rows=(monthly||[]).filter(row=>/^\d{4}-\d{2}$/.test(row.month)&&Number.isFinite(Number(row.net_pnl))).sort((a,b)=>a.month.localeCompare(b.month));
- if(!rows.length){target.innerHTML=emptyState('Your performance starts here','Settle your first position to see your P/L history.');return}
- let cumulative=0;
- const values=[0,...rows.map(row=>cumulative+=Number(row.net_pnl))];
+ if(!report){target.innerHTML=emptyState('Performance unavailable','Refresh to retry.');document.getElementById('portfolioProfit').textContent='—';document.getElementById('portfolioReturn').textContent='—';return}
+ const period=document.getElementById('performancePeriod').value;
+ let rows=[],hasSettlements=false;
+ if(period==='all'){
+  rows=(report.monthly||[]).filter(row=>/^\d{4}-\d{2}$/.test(row.month)&&Number.isFinite(Number(row.net_pnl))).sort((a,b)=>a.month.localeCompare(b.month)).map(row=>({key:row.month,value:Number(row.net_pnl),label:new Date(row.month+'-01T00:00:00Z').toLocaleDateString('en-AU',{month:'short',year:'2-digit',timeZone:'UTC'})}));
+  hasSettlements=rows.length>0;
+ }else{
+  const today=new Date(report.as_of||Date.now());today.setUTCHours(0,0,0,0);
+  const daily=new Map((report.daily||[]).map(row=>[row.day,row]));
+  for(let i=Number(period)-1;i>=0;i--){const day=new Date(today);day.setUTCDate(day.getUTCDate()-i);const key=day.toISOString().slice(0,10),row=daily.get(key);if(row&&Number(row.positions)>0)hasSettlements=true;rows.push({key,value:Number(row?.net_pnl||0),label:day.toLocaleDateString('en-AU',period==='7'?{weekday:'short',timeZone:'UTC'}:{day:'numeric',month:'short',timeZone:'UTC'})})}
+ }
+ const profit=rows.reduce((sum,row)=>sum+row.value,0);
+ document.getElementById('portfolioProfit').textContent=(profit>0?'+':'')+aud(profit);
+ document.getElementById('portfolioProfit').classList.toggle('negative',profit<0);
+ const change=document.getElementById('portfolioReturn');
+ change.textContent=startingCapital>0?(profit>=0?'▲ +':'▼ ')+(profit/startingCapital*100).toFixed(2)+'%':'—';change.classList.toggle('negative',profit<0);
+ document.getElementById('performanceCaption').textContent='Cumulative realised P/L · '+(period==='all'?'all settled months':'last '+period+' UTC days')+'. Percentage uses starting bankroll.';
+ if(!hasSettlements){target.innerHTML=emptyState(period==='all'?'Your performance starts here':'No settlements in this period','Recorded settlements will appear here.');return}
+ let cumulative=0;const values=rows.map(row=>cumulative+=row.value);
+ const width=Math.max(260,target.clientWidth||500),height=target.clientHeight||118,left=38,right=width-8,bottom=height-26;
  const min=Math.min(0,...values),max=Math.max(0,...values),range=max-min||1;
- const x=i=>58+i*(542/(values.length-1));
- const y=v=>145-(v-min)/range*120;
- const points=values.map((v,i)=>[x(i),y(v)]);
- const line=points.map((p,i)=>(i?'L':'M')+p.map(n=>n.toFixed(2)).join(',')).join(' ');
+ const x=i=>left+i*((right-left)/Math.max(1,values.length-1));
+ const y=value=>bottom-(value-min)/range*(bottom-8);
+ const points=values.map((value,i)=>[x(i),y(value)]);
+ const line=points.map((point,i)=>(i?'L':'M')+point.map(value=>value.toFixed(2)).join(',')).join(' ');
  let grid='';
- for(let i=0;i<4;i++){const value=min+range*i/3,yy=y(value);grid+='<line class="chart-grid" x1="58" x2="600" y1="'+yy+'" y2="'+yy+'"/><text class="chart-label" x="0" y="'+(yy+4)+'">'+escapeHtml(new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD',notation:'compact',maximumFractionDigits:1}).format(value))+'</text>'}
- const step=Math.max(1,Math.ceil(rows.length/5));
- const labels=rows.map((row,i)=>i%step===0||i===rows.length-1?'<text class="chart-label" text-anchor="'+(i===rows.length-1?'end':'middle')+'" x="'+x(i+1)+'" y="173">'+escapeHtml(new Date(row.month+'-01T00:00:00Z').toLocaleDateString('en-AU',{month:'short',year:'2-digit',timeZone:'UTC'}))+'</text>':'').join('');
- const dots=points.slice(1).map((point,i)=>'<circle cx="'+point[0]+'" cy="'+point[1]+'" r="3.5" fill="#31e3e7"><title>'+escapeHtml(rows[i].month+': '+aud(values[i+1])+' cumulative P/L')+'</title></circle>').join('');
- target.innerHTML='<svg viewBox="0 0 620 185" role="img" aria-label="Cumulative realised profit and loss by settled month"><defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#16cedf" stop-opacity=".38"/><stop offset="1" stop-color="#16cedf" stop-opacity="0"/></linearGradient></defs>'+grid+'<path d="'+line+' L600,150 L58,150 Z" fill="url(#chartFill)"/><path d="'+line+'" stroke="#31e3e7" stroke-width="2.5" fill="none"/>'+dots+labels+'</svg>';
+ for(let i=0;i<3;i++){const value=min+range*i/2,yy=y(value);grid+='<line class="chart-grid" x1="'+left+'" x2="'+right+'" y1="'+yy+'" y2="'+yy+'"/><text class="chart-label" x="0" y="'+(yy+3)+'">'+escapeHtml(new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD',notation:'compact',maximumFractionDigits:0}).format(value))+'</text>'}
+ const step=Math.max(1,Math.ceil(rows.length/(period==='7'?7:5)));
+ const labels=rows.map((row,i)=>i%step===0||i===rows.length-1?'<text class="chart-label" text-anchor="'+(i===rows.length-1?'end':i===0?'start':'middle')+'" x="'+x(i)+'" y="'+(height-5)+'">'+escapeHtml(row.label)+'</text>':'').join('');
+ const dots=points.map((point,i)=>'<circle cx="'+point[0]+'" cy="'+point[1]+'" r="2.7" fill="#2be7ee"><title>'+escapeHtml(rows[i].key+': '+aud(values[i])+' cumulative P/L')+'</title></circle>').join('');
+ target.innerHTML='<svg viewBox="0 0 '+width+' '+height+'" role="img" aria-label="Cumulative realised profit and loss for the selected period"><defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#00d3e4" stop-opacity=".35"/><stop offset="1" stop-color="#00d3e4" stop-opacity="0"/></linearGradient></defs>'+grid+'<path d="'+line+' L'+points.at(-1)[0]+','+bottom+' L'+left+','+bottom+' Z" fill="url(#chartFill)"/><path d="'+line+'" stroke="#2be7ee" stroke-width="2" fill="none"/>'+dots+labels+'</svg>';
 }
+document.getElementById('performancePeriod').addEventListener('change',()=>renderPortfolioChart());
+if('ResizeObserver' in window)new ResizeObserver(()=>{if(performanceReport&&!document.querySelector('[data-view=overview]').classList.contains('hidden'))renderPortfolioChart()}).observe(document.getElementById('performanceChart'));
+let chartResizeTimer=null;
+window.addEventListener('resize',()=>{clearTimeout(chartResizeTimer);chartResizeTimer=setTimeout(()=>{if(performanceReport)renderPortfolioChart()},100)});
 function renderPositionPreviews(rows){
  const open=rows.filter(row=>row.status==='Open'||row.status==='Unmatched');
  const target=document.getElementById('positionsPreview');
- target.innerHTML=open.length?'<table><thead><tr><th>ID</th><th>Event / Bookmakers</th><th>Theoretical P/L</th><th>Status</th><th></th></tr></thead><tbody>'+open.slice(0,4).map(row=>'<tr><td>#'+Number(row.id)+'</td><td>'+escapeHtml(row.event)+'<br><small>'+escapeHtml([...new Set((row.legs||[]).map(l=>l.bookmaker))].join(' / '))+'</small></td><td class="'+(Number(row.expected_profit)<0?'negative':'positive')+'">'+aud(row.expected_profit)+'</td><td><span class="pill '+(row.status==='Unmatched'?'bad':'')+'">'+escapeHtml(row.status)+'</span></td><td><button class="text-button" data-page="positions" type="button">Manage →</button></td></tr>').join('')+'</tbody></table>':emptyState('No open positions','Your manually recorded positions will appear here.');
+ const sportsIcon=sport=>/soccer|football/i.test(sport)?'⚽':/tennis/i.test(sport)?'🎾':/basket/i.test(sport)?'🏀':'◈';
+ target.innerHTML=open.length?'<table aria-label="Recent open positions; P/L is theoretical"><thead class="sr-only"><tr><th>Position</th><th>Sport</th><th>Bookmakers</th><th>Theoretical P/L</th><th>Status</th><th>Manage</th></tr></thead><tbody>'+open.slice(0,3).map(row=>'<tr><td><span class="sport-icon" aria-hidden="true">'+sportsIcon(row.sport)+'</span>#P-'+Number(row.id)+'</td><td title="'+escapeHtml(row.event)+'">'+escapeHtml(row.sport)+'</td><td><span class="bookmaker-names" title="'+escapeHtml([...new Set((row.legs||[]).map(leg=>leg.bookmaker))].join(' / '))+'">'+escapeHtml([...new Set((row.legs||[]).map(leg=>leg.bookmaker))].join(' / '))+'</span></td><td><span class="profit-pill '+(Number(row.expected_profit)<0?'negative':'positive')+'">'+(Number(row.expected_profit)>0?'+':'')+aud(row.expected_profit)+'</span></td><td><span class="'+(row.status==='Unmatched'?'negative':'')+'">'+(row.status==='Unmatched'?'At risk':'Open')+'</span></td><td><a class="position-link" href="/positions" data-page="positions" aria-label="Manage position '+Number(row.id)+'">›</a></td></tr>').join('')+'</tbody></table>':emptyState('No open positions','Manually recorded positions appear here.');
  const settled=rows.filter(row=>row.status==='Settled');
  document.getElementById('settlementsList').innerHTML=settled.length?'<table><thead><tr><th>Event</th><th>Settled</th><th>Actual P/L</th></tr></thead><tbody>'+settled.map(row=>'<tr><td>'+escapeHtml(row.event)+'</td><td>'+escapeHtml(row.settled_at||'—')+'</td><td class="'+(Number(row.actual_pnl)<0?'negative':'positive')+'">'+aud(row.actual_pnl)+'</td></tr>').join('')+'</tbody></table>':emptyState('No settlements yet','Record a final leg result to close a position.');
 }
@@ -222,7 +248,7 @@ async function markNotificationRead(id){
  catch(e){document.getElementById('notifications').textContent=e.message}
 }
 function renderReports(report){
- renderPortfolioChart(report.monthly);
+ renderPortfolioChart(report);
  const p=report.positions||{};
  document.getElementById('reportSummary').textContent=
   'Settled: '+Number(p.settled_positions||0)+' • Net realised P/L: $'+Number(p.net_realised_pnl||0).toFixed(2)+
@@ -314,6 +340,7 @@ function showAuthGate(setup){
  document.getElementById('dashboardContent').inert=true;
  document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());
  document.getElementById('vettingDock').classList.add('hidden');
+ document.getElementById('quickConfirm').disabled=true;
  const gate=document.getElementById('authGate');gate.classList.remove('hidden');
  document.getElementById('authControls').classList.add('hidden');
  document.getElementById('loginForm').classList.toggle('hidden',!!setup);
@@ -395,11 +422,12 @@ function updateOddsControls(){
  document.getElementById('oddsStatusDot').classList.toggle('unknown',!oddsConfigured);
 }
 document.getElementById('oddsSport').addEventListener('change',updateOddsControls);
+function audMetric(value){return new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD',minimumFractionDigits:0,maximumFractionDigits:2}).format(Number(value)||0)}
 function aud(value){return new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(Number(value)||0)}
 function renderRiskSummary(d){
  const set=(id,value)=>document.getElementById(id).textContent=value;
- set('maximumExposure',aud(d.maximum_exposure));
- set('protectedReserve',aud(Math.max(0,Number(d.starting_bankroll||0)-Number(d.maximum_exposure||0))));
+ set('maximumExposure',audMetric(d.maximum_exposure));
+ set('protectedReserve',audMetric(Math.max(0,Number(d.starting_bankroll||0)-Number(d.maximum_exposure||0))));
  set('reservePercent',(d.starting_bankroll?Math.max(0,100*(1-Number(d.maximum_exposure)/Number(d.starting_bankroll))).toFixed(0):'0')+'%');
  set('settledPositions',String(d.settled_positions??0));
  set('realisedProfit',aud(d.realised_profit_loss));
@@ -407,7 +435,13 @@ function renderRiskSummary(d){
  set('reinvestedProfit',aud(d.reinvested_profit));
  set('withdrawalAllocation',aud(d.withdrawal_allocation));
  const b=d.buffer||{};
- set('bufferAvailable',aud(b.available));
+ const maximum=Number(d.maximum_exposure||0),used=maximum>0?100*Number(d.open_exposure||0)/maximum:0,remaining=maximum>0?100*Number(d.remaining_exposure||0)/maximum:0;
+ set('exposureDetail',used.toFixed(1)+'% of '+aud(maximum));
+ set('remainingDetail',remaining.toFixed(1)+'% available');
+ document.getElementById('exposureProgress').style.width=Math.max(0,Math.min(100,used))+'%';
+ document.getElementById('remainingProgress').style.width=Math.max(0,Math.min(100,remaining))+'%';
+ set('openPositionCount','('+Number(d.open_positions||0)+')');
+ set('bufferAvailable',audMetric(b.available));
  document.getElementById('bufferProgress').style.width=(b.limit?Math.max(0,Math.min(100,100*Number(b.available)/Number(b.limit))):0)+'%';
  const overdue=Number(b.overdue_items||0);
  const el=document.getElementById('bufferSummary');
@@ -420,6 +454,15 @@ function renderRiskSummary(d){
   status.textContent='New positions paused — '+(reasons.join('; ')||'risk lock active');
   status.classList.add('bad');
   }else{status.classList.remove('bad');status.textContent='Risk limits OK'}
+}
+function openQuickAction(action){
+ if(action==='scan'){showPage('scanner');document.getElementById('liveFeed').scrollIntoView({block:'start'});document.getElementById('oddsSport').focus({preventScroll:true})}
+ else if(action==='draft'){showPage('scanner');document.getElementById('calculator').scrollIntoView({block:'start'});document.getElementById('event').focus({preventScroll:true})}
+ else if(action==='settle'){showPage('positions');document.getElementById('sets').scrollIntoView({block:'start'});document.querySelector('#sets button')?.focus({preventScroll:true})}
+}
+function renderBufferEntries(data){
+ const entries=data.entries||[];
+ document.getElementById('bufferEntries').innerHTML=entries.length?entries.map(entry=>'<div class="item"><div class="row"><b>'+aud(entry.amount)+'</b><span class="pill '+(entry.status==='committed'?'bad':'')+'">'+escapeHtml(entry.status)+'</span></div><div>'+escapeHtml(entry.description||'Settlement commitment')+'</div><small>Due '+escapeHtml(entry.due_at||'—')+'</small></div>').join(''):emptyState('No buffer commitments','Committed and resolved entries appear here.');
 }
 async function refresh(){
  if(refreshInProgress||!currentUser)return;
@@ -434,6 +477,7 @@ async function refresh(){
   ]);
   if(!currentUser||generation!==authGeneration)return;
   const d=core[1],p=core[2],o=core[3],accountRows=core[4];
+  startingCapital=Number(d.starting_bankroll||0);
   const config=core[0],retain=Number(config.reinvestment_percent??.75)*100,withdraw=Number(config.withdrawal_percent??.25)*100;
   document.getElementById('allocationRatio').textContent=retain.toFixed(0)+'% / '+withdraw.toFixed(0)+'%';
   document.getElementById('retainShare').textContent=retain.toFixed(0)+'%';document.getElementById('retainShare').style.width=retain+'%';
@@ -449,10 +493,10 @@ async function refresh(){
   renderPositionPreviews(p);
   renderAccounts(accountRows);
   setConnection(true,'Live');
-  document.getElementById('bankroll').textContent=aud(d.starting_bankroll);
-  document.getElementById('exposure').textContent=aud(d.open_exposure);
+  document.getElementById('bankroll').textContent=audMetric(d.starting_bankroll);
+  document.getElementById('exposure').textContent=audMetric(d.open_exposure);
   document.getElementById('active').textContent=String(d.open_positions);
-  document.getElementById('capacity').textContent=aud(d.remaining_exposure);
+  document.getElementById('capacity').textContent=audMetric(d.remaining_exposure);
   const openPositions=p.filter(function(x){return x.status==='Open'||x.status==='Unmatched'});
   const hedgeDrafts=Array.from(document.querySelectorAll('#sets [id^="hedge-form-"]:not(.hidden)')).map(form=>({positionId:Number(form.id.replace('hedge-form-','')),values:Array.from(form.querySelectorAll('input,select')).map(input=>({id:input.id,value:input.value})),focused:form.contains(document.activeElement)?document.activeElement.id:null}));
   document.getElementById('sets').innerHTML=openPositions.map(function(x){
@@ -468,13 +512,14 @@ async function refresh(){
   document.getElementById('opps').innerHTML=o.map(function(x){return '<div class="item"><b>'+escapeHtml(x.sport)+': '+escapeHtml(x.event)+'</b><div class="muted">'+escapeHtml(x.market)+' • '+(Number(x.roi)*100).toFixed(2)+'% • '+escapeHtml(x.status)+'</div></div>'}).join('')||'<small>No opportunities yet.</small>';
   // Update core financial figures immediately, before optional services settle.
   const optional=await Promise.allSettled([
-   api('/reports/summary'),api('/notifications'),api('/backups')
+   api('/reports/summary'),api('/notifications'),api('/backups'),api('/buffer')
   ]);
   if(!currentUser||generation!==authGeneration)return;
   if(optional[0].status==='fulfilled')renderReports(optional[0].value);
   if(optional[1].status==='fulfilled')renderNotifications(optional[1].value);
   if(optional[2].status==='fulfilled')renderBackups(optional[2].value);
-  if(optional[0].status==='rejected')document.getElementById('performanceChart').innerHTML=emptyState('Performance unavailable','Refresh the dashboard to retry.');
+  if(optional[3].status==='fulfilled')renderBufferEntries(optional[3].value);else document.getElementById('bufferEntries').textContent='Buffer history unavailable. Refresh to retry.';
+  if(optional[0].status==='rejected')renderPortfolioChart(null);
   if(optional[1].status==='rejected'){document.getElementById('notificationsPreview').innerHTML=emptyState('Notifications unavailable','Refresh the dashboard to retry.');document.getElementById('notificationBadge').classList.add('hidden')}
   const unavailable=['reportSummary','notifications','backupList'];
   optional.forEach((result,index)=>{if(result.status==='rejected')document.getElementById(unavailable[index]).textContent='Unavailable — retry using Refresh dashboard.'});
@@ -546,6 +591,7 @@ async function scan(){
 function updateVettingAvailability(){
  const ready=!!(lastOpportunity&&lastOpportunity.qualified&&lastCandidate);
  const button=document.getElementById('openVettingButton');button.disabled=!ready;
+ document.getElementById('quickConfirm').disabled=!ready;
  document.getElementById('vettingDock').classList.toggle('hidden',!ready);
  document.getElementById('vettingStatus').textContent=ready?'Qualified candidate ready • '+lastCandidate.event:'Run a qualifying scan to open the review checklist.'
 }

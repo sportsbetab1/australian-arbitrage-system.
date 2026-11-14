@@ -2,18 +2,23 @@
 
 ## Current focus: private operator app
 
-Public paid/customer development is paused at the owner's request. The next
-work is the private dashboard, Render hosting and The Odds API connection.
-The UI overhaul follows the owner's supplied reference: navy sidebar, cyan,
-indigo, violet and mint summary cards, a real monthly cumulative P/L chart,
-radar-style on-demand scanner, buffer/allocation/status panels and compact
-positions/notifications. Mobile uses bottom navigation. Tools now have separate
-views. No reference-image profit, live timer or bookmaker-connection claims are
-hardcoded. `static/dashboard.css` is the single stylesheet; the mobile manifest
-uses its navy palette. `tests/dashboard_browser_check.py` verifies the interface
-with disposable data and writes ignored screenshots.
-Sidebar icons and labels now have proper page URLs (`/dashboard`, `/positions`,
-`/settlements`, `/accounts`, `/scanner`, `/analytics`, `/settings`, `/notifications`).
+Public paid/customer development and bookmaker account connections are paused
+at the owner's request. The current task implements the owner's newer compact
+phone reference: top horizontal navigation, four summary cards in one row,
+7/30-day or all-time chart, paired buffer/allocation and exposure panels, key
+metrics, recent positions and a fixed four-action bar. The scanner/status and
+notification panels moved off the front page. No sample profit or connection
+claims are hardcoded. Recent chart data is grouped by UTC settlement day; the
+displayed percentage uses selected-period P/L divided by starting bankroll.
+Key Metrics remain all-time. Bottom actions open actual review/calculator/
+settlement workflows without asserting any bookmaker acceptance.
+`static/dashboard.css` is the single stylesheet. The browser check covers five
+widths, page/icon navigation, chart periods, compact phone geometry, input
+preservation and the bottom actions using disposable records. The updated
+regression suite passed 196 tests.
+Navigation icons and labels have page URLs (`/dashboard`, `/positions`,
+`/settlements`, `/accounts`, `/scanner`, `/analytics`, `/settings`, `/notifications`,
+`/buffer`).
 The server serves the sign-in-protected app shell at each page, with no-store
 headers; private APIs remain authenticated. Navigation supports reloads,
 Back/Forward and native modified-link clicks.
@@ -35,8 +40,8 @@ financial deployment. The paid disk blueprint is unchanged. See
 The owner approved a temporary free preview and connected Render. The service
 is live at `https://arbitrage-private-preview.onrender.com` in Singapore on
 the Free plan with no disk and automatic deployment disabled. It deploys this
-branch's application commit `b3b2a4e`; prior CI passed and the overhaul's frontend
-CI passed, with the full Linux/Windows workflow still running at deployment. Render's
+branch manually; use Render's deployment history for the live commit. Prior CI
+passed and the latest local verification is documented above. Render's
 default Python failed dependency installation, so the host now pins 3.11.11.
 `AUTH_SETUP_TOKEN` was generated privately by Render. The start command enables
 preview mode and places the database and snapshots under `/tmp/arbitrage-preview`.

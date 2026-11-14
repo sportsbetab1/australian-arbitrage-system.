@@ -27,17 +27,25 @@ The dashboard supports Hunta and Jay accounts with Argon2 password hashes, HTTP-
 
 ### Private dashboard interface
 
-The navy dashboard uses sidebar navigation on desktop and bottom navigation on
-iPhone. The front page shows capital, exposure limits, reserve, account inventory,
-settled P/L, buffer availability, profit allocations, open positions and recent
-notifications. Accounts, Scanner, Positions, Settlements, Analytics, Notifications
-and Settings have separate views; on phones the extra views are under **More**.
-Each sidebar icon and label opens its own URL (for example `/positions` or
-`/accounts`). Direct links, reloads and browser Back/Forward retain the selected
-page. Financial APIs still require sign-in on every route.
+The compact navy dashboard follows the owner's phone reference: horizontal
+Dashboard/Scanner/Positions/Accounts/Buffer/More navigation, four summary cards
+in one row, a portfolio chart, paired buffer/allocation and exposure panels,
+five key metrics and the latest three open positions. Notifications and profile
+are accessible from header icons. Larger status and scanner panels live on their
+respective pages. Bookmaker account connections and public paid work are paused.
 
-The portfolio chart uses the report's actual monthly settled P/L, accumulated
-chronologically. It shows an empty state before the first settlement. The scanner
+The fixed bottom bar opens Scan Markets, starts a draft in the calculator,
+opens assisted confirmation for a selected candidate, or opens positions for
+settlement. These buttons never automatically place, confirm or settle bets.
+Each navigation icon and label has its own URL, including `/buffer`. Extra
+tools are under More. Direct links, reloads and Back/Forward retain the page.
+Financial APIs still require sign-in on every route.
+
+The portfolio chart supports 7-day, 30-day and all-time periods. Recent periods
+use actual settlements grouped by UTC day, including zero-activity dates;
+all-time uses settled months. The return percentage divides the selected
+period's realised P/L by starting bankroll. Key Metrics remain all-time.
+An empty period shows an empty state, not sample profit. The scanner
 runs only on request; the radar animates only while a provider request is pending.
 Account counts represent ledger records, not connected bookmaker accounts. Push
 status describes this device's subscription, not verified delivery. All bets
@@ -52,6 +60,8 @@ python tests/dashboard_browser_check.py --server-python ../.venv/bin/python
 
 This starts a disposable server/database, uses fictional fixture records, checks
 five viewport sizes and writes screenshots under the ignored `artifacts/` folder.
+It also checks the four-card phone row, compact dashboard height, chart periods,
+top navigation, Buffer history and bottom action destinations.
 It makes no live odds-provider or bookmaker calls.
 
 Concurrent sign-in attempts update failure counts under a serialized database

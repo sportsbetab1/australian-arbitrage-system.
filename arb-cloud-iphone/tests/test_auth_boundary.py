@@ -57,7 +57,7 @@ class AuthenticationBoundaryTests(unittest.TestCase):
 
     def test_each_navigation_page_can_be_opened_directly(self):
         for path in ("/dashboard", "/positions", "/settlements", "/accounts",
-                     "/scanner", "/analytics", "/settings", "/notifications"):
+                     "/scanner", "/analytics", "/settings", "/notifications", "/buffer"):
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)

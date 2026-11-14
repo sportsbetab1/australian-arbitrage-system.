@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -64,10 +65,12 @@ def run():
                 page.locator('#loginForm button[type=submit]').click()
                 expect(page.locator('#lastUpdated')).to_contain_text('Last dashboard update:')
                 expect(page.locator('#bookmakerAccountCount')).to_have_text('14')
-                expect(page.locator('#performanceChart')).to_contain_text('Your performance starts here')
+                expect(page.locator('#performanceChart')).to_contain_text('No settlements in this period')
                 # Click the SVG icons themselves: routes must survive reloads.
-                for view in ['positions', 'settlements', 'accounts', 'scanner', 'analytics', 'settings', 'notifications', 'overview']:
+                for view in ['positions', 'settlements', 'accounts', 'scanner', 'analytics', 'settings', 'notifications', 'buffer', 'overview']:
                     path = '/dashboard' if view == 'overview' else '/' + view
+                    if view in ['settlements', 'analytics', 'notifications']:
+                        page.locator('.nav-settings').click()
                     page.locator(f'.nav-{view} .icon').click()
                     expect(page).to_have_url(origin + path)
                     expect(page.locator(f'[data-view={view}]')).to_be_visible()
@@ -88,9 +91,14 @@ def run():
                 # Fixture-only records provide an independently calculated chart
                 # and table snapshot. This database is removed at test completion.
                 with sqlite3.connect(db_path) as con:
-                    for month, pnl in [('2026-06', 100), ('2026-07', 150), ('2026-08', -50), ('2026-09', 200), ('2026-10', 150), ('2026-11', 250)]:
+                    for month, pnl in [('2026-06', 100), ('2026-07', 150), ('2026-08', -50), ('2026-09', 200), ('2026-10', 150)]:
                         con.execute('INSERT INTO positions(event,sport,market,status,total_stake,actual_pnl,settled_at) VALUES (?,?,?,?,?,?,?)',
                                     ('Fictional settled match', 'Tennis', 'Winner', 'Settled', 500, pnl, month + '-05T12:00:00+00:00'))
+                    today = datetime.now(timezone.utc)
+                    for index, pnl in enumerate([20, 30, -10, 80, 60, 70]):
+                        date = (today - timedelta(days=5-index)).isoformat()
+                        con.execute('INSERT INTO positions(event,sport,market,status,total_stake,actual_pnl,settled_at) VALUES (?,?,?,?,?,?,?)',
+                                    ('Fictional recent settlement', 'Tennis', 'Winner', 'Settled', 100, pnl, date))
                     accounts = con.execute("SELECT id FROM accounts WHERE bookmaker='Sportsbet' ORDER BY owner").fetchall()
                     for name, profit in [('Fictional Melbourne v Sydney', 42.30), ('Fictional Brisbane v Perth', 28.75)]:
                         cursor = con.execute('INSERT INTO positions(event,sport,market,status,total_stake,expected_profit,expected_roi) VALUES (?,?,?,?,?,?,?)',
@@ -103,8 +111,15 @@ def run():
                 expect(page.locator('#refreshButton')).to_be_enabled()
                 expect(page.locator('#realisedProfit')).to_have_text('$800.00')
                 expect(page.locator('#performanceChart svg')).to_be_visible()
+                expect(page.locator('#portfolioProfit')).to_have_text('+$250.00')
+                expect(page.locator('#portfolioReturn')).to_contain_text('2.50%')
+                expect(page.locator('#performanceChart circle')).to_have_count(7)
+                page.locator('#performancePeriod').select_option('all')
                 expect(page.locator('#performanceChart circle')).to_have_count(6)
                 expect(page.locator('#performanceChart circle').last.locator('title')).to_contain_text('$800.00')
+                page.locator('#performancePeriod').select_option('30')
+                expect(page.locator('#performanceChart circle')).to_have_count(30)
+                page.locator('#performancePeriod').select_option('7')
                 expect(page.locator('#positionsPreview tbody tr')).to_have_count(2)
                 expect(page.locator('#notificationsPreview')).to_contain_text('Fictional position settled')
                 expect(page.locator('#scannerBadge')).to_have_text('Not configured')
@@ -113,15 +128,36 @@ def run():
                 for width, height in [(1440, 1100), (1024, 1000), (768, 1024), (390, 844), (320, 740)]:
                     page.set_viewport_size({'width': width, 'height': height})
                     page.evaluate("showPage('overview')")
+                    page.wait_for_function("Math.abs(Number(document.querySelector('#performanceChart svg').getAttribute('viewBox').split(' ')[2])-document.getElementById('performanceChart').clientWidth)<1")
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), width
+                    page.wait_for_function("(()=>{const el=document.querySelector('#performanceChart svg');return el&&el.getBoundingClientRect().bottom<=document.querySelector('.performance-card').getBoundingClientRect().bottom+1})()")
+                    if width == 390:
+                        assert page.locator('[data-view=overview]').bounding_box()['height'] < 740
+                        tops = page.locator('.summary-card').evaluate_all('nodes=>nodes.map(el=>el.getBoundingClientRect().top)')
+                        assert max(tops)-min(tops) < 1
                     page.screenshot(path=str(artifacts / f'dashboard-overhaul-{width}.png'), full_page=True)
-                    for view in ['positions', 'settlements', 'accounts', 'scanner', 'analytics', 'notifications', 'settings']:
+                    for view in ['positions', 'settlements', 'accounts', 'scanner', 'analytics', 'notifications', 'buffer', 'settings']:
                         page.evaluate('(view)=>showPage(view)', view)
                         expect(page.locator(f'[data-view={view}]')).to_be_visible()
                         assert page.locator('[data-view]:visible').count() == 1
                         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, view)
 
                 page.set_viewport_size({'width': 390, 'height': 844})
+                page.locator('.quick-actions button').filter(has_text='New Draft').click()
+                expect(page.locator('#event')).to_be_focused()
+                expect(page).to_have_url(origin + '/scanner')
+                page.locator('.quick-actions button').filter(has_text='Scan Markets').click()
+                expect(page.locator('#oddsSport')).to_be_focused()
+                page.locator('.nav-buffer').click()
+                expect(page).to_have_url(origin + '/buffer')
+                expect(page.locator('#bufferEntries')).to_contain_text('No buffer commitments')
+                page.locator('.quick-actions button').filter(has_text='Settle').click()
+                expect(page).to_have_url(origin + '/positions')
+                expect(page.locator('#quickConfirm')).to_be_disabled()
+                page.evaluate("lastOpportunity={qualified:true,stakes:[250,250],roi:0.05,profit:25};lastCandidate={sport:'Tennis',event:'Fictional review',market:'Winner',outcomes:[{selection:'Home',bookmaker:'Sportsbet',odds:2.1},{selection:'Away',bookmaker:'Sportsbet',odds:2.1}]};updateVettingAvailability()")
+                page.locator('#quickConfirm').click()
+                expect(page.locator('#vettingDialog')).to_be_visible()
+                page.locator('#vettingDialog .dialog-close').click()
                 page.locator('.nav-accounts').click()
                 page.locator('#accountOwner').select_option('Hunta')
                 expect(page.locator('#accountBalances > .item')).to_have_count(7)

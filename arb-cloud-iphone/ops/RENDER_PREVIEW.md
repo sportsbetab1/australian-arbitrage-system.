@@ -5,8 +5,9 @@
 The owner approved the temporary-storage limitation and a Free web service
 was created in Singapore. It is live at
 https://arbitrage-private-preview.onrender.com with automatic deploys disabled.
-It uses application commit `b3b2a4e` from `codex/private-dashboard-hosting`,
-including the owner's reference-based dashboard and Hunta-first login setup.
+Its application source is `codex/private-dashboard-hosting`, including the
+owner's compact phone dashboard and Hunta-first login setup. Render's deployment
+history records the exact live commit; publishing a branch does not auto-deploy.
 The service's environment settings are at
 https://dashboard.render.com/web/srv-dbruqqgn74is738ccc80/env .
 
