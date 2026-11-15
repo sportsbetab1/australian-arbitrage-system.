@@ -7,12 +7,17 @@ import os
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from scripts.trial_credit_ledger import connect, monitor
+from app.trial_worker import start_worker, worker_info
 
 app = FastAPI(title="Australian Arbitrage Trial Monitor")
 
+@app.on_event("startup")
+def startup_worker():
+    start_worker()
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "scanner_enabled": False}
+    return {"status": "ok", **worker_info()}
 
 @app.get("/api/trial/status")
 def status():
@@ -22,10 +27,10 @@ def status():
     try:
         with connect() as con:
             result = monitor(con)
-        result["scanner_enabled"] = False
+        result.update(worker_info())
         return result
     except Exception:
-        return {"status": "database_unavailable", "scanner_enabled": False,
+        return {"status": "database_unavailable", **worker_info(),
                 "note": "Monitoring unavailable; scanning is disabled"}
 
 @app.get("/", response_class=HTMLResponse)
@@ -46,7 +51,7 @@ document.getElementById('status').textContent=d.status||'unknown';
 document.getElementById('credits').textContent=d.credits_remaining??'—';
 document.getElementById('scans').textContent=d.scan_count??0;
 document.getElementById('opps').textContent='Qualifying opportunities: '+(d.qualified_count??0);
-document.getElementById('note').textContent=d.note||'Automatic scanning is not yet enabled';
+document.getElementById('note').textContent=d.note||(d.scanner_enabled?'Scanner active (free-tier best effort)':'Automatic scanning is not yet enabled');
 document.getElementById('window').textContent=d.started_at?new Date(d.started_at).toLocaleString()+' — '+new Date(d.ends_at).toLocaleString():'Not started';
 }catch(e){document.getElementById('status').textContent='Connection unavailable'}}
 refresh();setInterval(refresh,30000);
