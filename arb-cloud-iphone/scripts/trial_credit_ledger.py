@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 LIMIT = 350
 DURATION = timedelta(hours=24)
-RESERVATION = 4  # Conservative per-request hold; reconcile with actual provider cost.
+RESERVATION = 8  # AU h2h request reserve; extra 50-credit buffer in worker.
 
 
 def connect():
@@ -16,7 +16,7 @@ def connect():
     url = os.environ.get("TRIAL_DATABASE_URL")
     if not url:
         raise RuntimeError("TRIAL_DATABASE_URL is required; paid scanning disabled")
-    return psycopg.connect(url, sslmode="require")
+    return psycopg.connect(url, sslmode="require", autocommit=True)
 
 
 def initialize(con):
