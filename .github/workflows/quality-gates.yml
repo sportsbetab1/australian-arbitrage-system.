@@ -26,3 +26,6 @@ jobs:
               ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
           print(f'Parsed {len(files)} Python files')
           PY
+      - name: Trial quota regression tests
+        working-directory: arb-cloud-iphone
+        run: python -m unittest discover -s tests -p 'test_trial_quota_guard.py' -v
