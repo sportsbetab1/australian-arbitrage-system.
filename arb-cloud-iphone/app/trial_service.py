@@ -7,7 +7,7 @@ import os
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from scripts.trial_credit_ledger import connect, monitor
-from app.trial_worker import start_worker, worker_info
+from app.trial_worker import start_worker, worker_info, trial_scan_allowed
 
 app = FastAPI(title="Australian Arbitrage Trial Monitor")
 
@@ -28,9 +28,10 @@ def status():
         with connect() as con:
             result = monitor(con)
         result.update(worker_info())
+        result["scanner_enabled"] = result["scanner_enabled"] and trial_scan_allowed(result)
         return result
     except Exception:
-        return {"status": "database_unavailable", **worker_info(),
+        return {"status": "database_unavailable", **worker_info(), "scanner_enabled": False,
                 "note": "Monitoring unavailable; scanning is disabled"}
 
 @app.get("/", response_class=HTMLResponse)

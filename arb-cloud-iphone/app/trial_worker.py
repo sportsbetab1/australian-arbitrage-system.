@@ -5,7 +5,7 @@ import threading
 from datetime import datetime, timezone
 from app.odds import fetch_json, build_h2h_candidates
 from app.global_scanner import supported_sports, eligible_bookmakers
-from scripts.trial_credit_ledger import connect, start, monitor, reserve, reconcile
+from scripts.trial_credit_ledger import RESERVATION, connect, start, monitor, reserve, reconcile
 
 ALLOWED = ("Sportsbet", "Betfair", "PointsBet", "Unibet", "Dabble", "Picklebet", "Ladbrokes")
 INTERVAL = 15 * 60
@@ -15,6 +15,14 @@ _last_error = None
 
 def enabled():
     return os.getenv("TRIAL_AUTO_SCAN", "").lower() == "true" and bool(os.getenv("ODDS_API_KEY")) and bool(os.getenv("TRIAL_DATABASE_URL"))
+
+def trial_scan_allowed(state):
+    """Keep each 8-credit reservation within the 300-credit trial scan ceiling."""
+    return (
+        state.get("status") in ("active", "not_started")
+        and state.get("credits_used_or_reserved", 350) + RESERVATION <= 300
+    )
+
 
 def scan_once():
     global _last_error
@@ -33,7 +41,7 @@ def scan_once():
             return
         # Reserve a conservative 8 credits per AU h2h request and keep a 50-credit
         # provider-overage buffer. Never attempt a request near the full cap.
-        if state["credits_used_or_reserved"] >= 300:
+        if not trial_scan_allowed(state):
             return
         # Rotate across competitions using the durable request history.
         from scripts.trial_credit_ledger import initialize

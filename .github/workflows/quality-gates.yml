@@ -1,0 +1,33 @@
+name: Arbitrage static checks
+on:
+  pull_request:
+    branches: [main, backend-upgrade]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python-syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject tracked credentials and database dumps
+        run: python arb-cloud-iphone/scripts/check_tracked_secrets.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile Python sources without executing application code
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          files = sorted(Path('arb-cloud-iphone').rglob('*.py'))
+          if not files:
+              raise SystemExit('No Python files found')
+          for path in files:
+              ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+          print(f'Parsed {len(files)} Python files')
+          PY
+      - name: Trial quota regression tests
+        working-directory: arb-cloud-iphone
+        run: python -m unittest discover -s tests -p 'test_*guard.py' -v
