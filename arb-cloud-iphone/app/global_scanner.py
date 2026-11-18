@@ -4,6 +4,7 @@ No bets are submitted by this module. Provider coverage is not country coverage:
 sport keys identify competitions, and regions identify bookmaker markets.
 """
 from datetime import datetime, timezone
+import math
 import re
 
 SPORT_PREFIXES = ("soccer_", "tennis_", "basketball_", "rugbyleague_", "aussierules_", "cricket_")
@@ -113,11 +114,15 @@ def reserve_scan(con, sport_key, now, estimated_points=RESERVATION_POINTS):
 
 def reconcile_scan(con, scan_id, actual_points, status):
     """Keep maximum of reserved and reported cost to fail safely."""
-    if actual_points is not None and (not isinstance(actual_points, (int, float)) or actual_points < 0):
+    if actual_points is not None and (
+        not isinstance(actual_points, (int, float))
+        or not math.isfinite(actual_points)
+        or actual_points < 0
+    ):
         raise ValueError("Invalid provider cost")
     con.execute(
         "UPDATE global_scan_ledger SET actual_points=?,status=? WHERE id=?",
-        (None if actual_points is None else int(actual_points), status, scan_id),
+        (None if actual_points is None else math.ceil(actual_points), status, scan_id),
     )
 
 # Trial mode is deliberately fail-closed and persists across server restarts.
