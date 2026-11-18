@@ -1,0 +1,29 @@
+# Python and local tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.p12
+*.pfx
+# Local databases and backups
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.dump
+*.backup
+*.sql.gz
+backups/
+# Local logs and operating-system files
+*.log
+.DS_Store
