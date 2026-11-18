@@ -5,7 +5,7 @@ import threading
 from datetime import datetime, timezone
 from app.odds import fetch_json, build_h2h_candidates
 from app.global_scanner import supported_sports, eligible_bookmakers
-from scripts.trial_credit_ledger import connect, start, monitor, reserve, reconcile
+from scripts.trial_credit_ledger import RESERVATION, connect, start, monitor, reserve, reconcile
 
 ALLOWED = ("Sportsbet", "Betfair", "PointsBet", "Unibet", "Dabble", "Picklebet", "Ladbrokes")
 INTERVAL = 15 * 60
@@ -20,7 +20,7 @@ def trial_scan_allowed(state):
     """Keep each 8-credit reservation within the 300-credit trial scan ceiling."""
     return (
         state.get("status") in ("active", "not_started")
-        and state.get("credits_used_or_reserved", 350) + 8 <= 300
+        and state.get("credits_used_or_reserved", 350) + RESERVATION <= 300
     )
 
 
