@@ -28,4 +28,4 @@ jobs:
           PY
       - name: Trial quota regression tests
         working-directory: arb-cloud-iphone
-        run: python -m unittest discover -s tests -p 'test_trial_quota_guard.py' -v
+        run: python -m unittest discover -s tests -p 'test_*guard.py' -v
